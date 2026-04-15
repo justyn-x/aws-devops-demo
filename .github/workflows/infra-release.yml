@@ -44,6 +44,28 @@ jobs:
             cat /tmp/diff.txt
           fi
 
+      - name: Notify WeCom
+        if: steps.diff.outputs.has_diff == 'true'
+        env:
+          WEBHOOK: ${{ secrets.WECOM_WEBHOOK_URL }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [[ -z "$WEBHOOK" ]] && exit 0
+          DIFF=$(head -c 2000 /tmp/diff.txt 2>/dev/null || echo "No diff output")
+          BODY=$(cat <<EOF
+          {
+            "msgtype": "markdown",
+            "markdown": {
+              "content": "📋 **Infra** staging CDK Diff\n> Tag: \`${REF_NAME}\`\n\n\`\`\`\n${DIFF}\n\`\`\`\n\n👉 [审批部署](${RUN_URL})"
+            }
+          }
+          EOF
+          )
+          curl -s -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            -d "$BODY"
+
   staging-deploy:
     needs: staging-diff
     if: needs.staging-diff.outputs.has_diff == 'true'
@@ -78,9 +100,18 @@ jobs:
         run: |
           [[ -z "$WEBHOOK" ]] && exit 0
           EMOJI=$([[ "$STATUS" == "success" ]] && echo "✅" || echo "❌")
+          BODY=$(cat <<EOF
+          {
+            "msgtype": "markdown",
+            "markdown": {
+              "content": "${EMOJI} **${STATUS}** Infra staging deployed\n> Tag: \`${REF_NAME}\`"
+            }
+          }
+          EOF
+          )
           curl -s -X POST "$WEBHOOK" \
             -H 'Content-Type: application/json' \
-            -d "{\"msgtype\":\"markdown\",\"markdown\":{\"content\":\"$EMOJI **$STATUS** Infra staging deployed\\n> Tag: \`$REF_NAME\`\"}}"
+            -d "$BODY"
 
   # ── Prod ─────────────────────────────────────────────────
   prod-diff:
@@ -116,6 +147,28 @@ jobs:
             cat /tmp/diff.txt
           fi
 
+      - name: Notify WeCom
+        if: steps.diff.outputs.has_diff == 'true'
+        env:
+          WEBHOOK: ${{ secrets.WECOM_WEBHOOK_URL }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [[ -z "$WEBHOOK" ]] && exit 0
+          DIFF=$(head -c 2000 /tmp/diff.txt 2>/dev/null || echo "No diff output")
+          BODY=$(cat <<EOF
+          {
+            "msgtype": "markdown",
+            "markdown": {
+              "content": "📋 **Infra** PROD CDK Diff\n> Tag: \`${REF_NAME}\`\n\n\`\`\`\n${DIFF}\n\`\`\`\n\n👉 [审批部署](${RUN_URL})"
+            }
+          }
+          EOF
+          )
+          curl -s -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            -d "$BODY"
+
   prod-deploy:
     needs: prod-diff
     if: needs.prod-diff.outputs.has_diff == 'true'
@@ -150,6 +203,15 @@ jobs:
         run: |
           [[ -z "$WEBHOOK" ]] && exit 0
           EMOJI=$([[ "$STATUS" == "success" ]] && echo "✅" || echo "❌")
+          BODY=$(cat <<EOF
+          {
+            "msgtype": "markdown",
+            "markdown": {
+              "content": "${EMOJI} **${STATUS}** Infra PRODUCTION deployed\n> Tag: \`${REF_NAME}\`"
+            }
+          }
+          EOF
+          )
           curl -s -X POST "$WEBHOOK" \
             -H 'Content-Type: application/json' \
-            -d "{\"msgtype\":\"markdown\",\"markdown\":{\"content\":\"$EMOJI **$STATUS** Infra PRODUCTION deployed\\n> Tag: \`$REF_NAME\`\"}}"
+            -d "$BODY"

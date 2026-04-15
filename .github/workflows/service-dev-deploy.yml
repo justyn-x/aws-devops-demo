@@ -76,12 +76,35 @@ jobs:
           REGION: ${{ vars.DEV_REGION }}
         run: |
           cd iac/service
-          echo "::group::Diff $SVC (tag: $IMAGE_TAG)"
           npx cdk diff "awsdemo-dev-$SVC" --exclusively \
             -c env=dev -c "tag:$SVC=$IMAGE_TAG" \
             -c "account=$ACCOUNT_ID" -c "region=$REGION" \
-            --no-color 2>&1 || true
-          echo "::endgroup::"
+            --no-color > /tmp/diff.txt 2>&1 || true
+          cat /tmp/diff.txt
+
+      - name: Notify WeCom
+        if: always()
+        env:
+          WEBHOOK: ${{ secrets.WECOM_WEBHOOK_URL }}
+          SVC: ${{ matrix.service }}
+          IMAGE_TAG: ${{ needs.parse.outputs.image_tag }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [[ -z "$WEBHOOK" ]] && exit 0
+          DIFF=$(head -c 2000 /tmp/diff.txt 2>/dev/null || echo "No diff output")
+          BODY=$(cat <<EOF
+          {
+            "msgtype": "markdown",
+            "markdown": {
+              "content": "📋 **${SVC}** dev CDK Diff\n> Tag: \`${IMAGE_TAG}\`\n> Actor: ${ACTOR}\n\n\`\`\`\n${DIFF}\n\`\`\`\n\n👉 [审批部署](${RUN_URL})"
+            }
+          }
+          EOF
+          )
+          curl -s -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            -d "$BODY"
 
   # ── Docker Build & Push (并行) ───────────────────────────
   build:
@@ -158,6 +181,15 @@ jobs:
         run: |
           [[ -z "$WEBHOOK" ]] && exit 0
           EMOJI=$([[ "$STATUS" == "success" ]] && echo "✅" || echo "❌")
+          BODY=$(cat <<EOF
+          {
+            "msgtype": "markdown",
+            "markdown": {
+              "content": "${EMOJI} **${STATUS}** ${SVC} dev deploy\n> Tag: \`${IMAGE_TAG}\`\n> Actor: ${ACTOR}"
+            }
+          }
+          EOF
+          )
           curl -s -X POST "$WEBHOOK" \
             -H 'Content-Type: application/json' \
-            -d "{\"msgtype\":\"markdown\",\"markdown\":{\"content\":\"$EMOJI **$STATUS** $SVC dev deploy\\n> Tag: \`$IMAGE_TAG\`\\n> Actor: $ACTOR\"}}"
+            -d "$BODY"
