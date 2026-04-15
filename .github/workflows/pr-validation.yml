@@ -14,10 +14,10 @@ jobs:
   go-checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with: { go-version: '1.22' }
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: ~/go/pkg/mod
           key: go-${{ hashFiles('go.sum') }}
@@ -29,7 +29,7 @@ jobs:
     outputs:
       has_infra_changes: ${{ steps.guard.outputs.has_infra_changes }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { fetch-depth: 0 }
       - id: guard
         env:
@@ -63,14 +63,14 @@ jobs:
             account_var: PROD_ACCOUNT_ID
             region_var: PROD_REGION
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: iac/infra/package-lock.json
       - run: cd iac/infra && npm ci && npm run build
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets[matrix.role_secret] }}
           aws-region: ${{ vars[matrix.region_var] }}
@@ -85,7 +85,7 @@ jobs:
             -c "account=$ACCOUNT_ID" \
             -c "region=$REGION" \
             --no-color 2>&1 || true) >> /tmp/diff.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cdk-diff-${{ matrix.env_name }}
           path: /tmp/diff.txt
@@ -95,8 +95,8 @@ jobs:
     needs: cdk-diff
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
-      - uses: actions/github-script@v7
+      - uses: actions/download-artifact@v4.3
+      - uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
