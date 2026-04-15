@@ -58,6 +58,8 @@ jobs:
   staging-diff:
     needs: [prepare, build-push]
     runs-on: ubuntu-latest
+    outputs:
+      has_diff: ${{ steps.diff.outputs.has_diff }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -70,22 +72,28 @@ jobs:
           role-to-assume: ${{ secrets.STAGING_ROLE_ARN }}
           aws-region: ${{ vars.STAGING_REGION }}
       - run: cd iac/service && npm ci && npm run build
-      - env:
+      - id: diff
+        env:
           SVC: ${{ needs.prepare.outputs.svc_name }}
           TAG: ${{ needs.prepare.outputs.image_tag }}
           ACCOUNT_ID: ${{ vars.STAGING_ACCOUNT_ID }}
           REGION: ${{ vars.STAGING_REGION }}
         run: |
           cd iac/service
-          echo "::group::Staging Diff"
-          npx cdk diff "awsdemo-staging-$SVC" --exclusively \
+          if npx cdk diff "awsdemo-staging-$SVC" --exclusively \
             -c env=staging -c "tag:$SVC=$TAG" \
             -c "account=$ACCOUNT_ID" -c "region=$REGION" \
-            --no-color 2>&1 || true
-          echo "::endgroup::"
+            --quiet --fail --no-color > /tmp/diff.txt 2>&1; then
+            echo "has_diff=false" >> "$GITHUB_OUTPUT"
+            echo "No changes detected"
+          else
+            echo "has_diff=true" >> "$GITHUB_OUTPUT"
+            cat /tmp/diff.txt
+          fi
 
   staging-deploy:
     needs: [prepare, staging-diff]
+    if: needs.staging-diff.outputs.has_diff == 'true'
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -127,8 +135,11 @@ jobs:
 
   # ── Prod ─────────────────────────────────────────────────
   prod-diff:
-    needs: [prepare, staging-deploy]
+    needs: [prepare, staging-diff, staging-deploy]
+    if: always() && (needs.staging-deploy.result == 'success' || needs.staging-diff.outputs.has_diff == 'false')
     runs-on: ubuntu-latest
+    outputs:
+      has_diff: ${{ steps.diff.outputs.has_diff }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -141,22 +152,28 @@ jobs:
           role-to-assume: ${{ secrets.PROD_ROLE_ARN }}
           aws-region: ${{ vars.PROD_REGION }}
       - run: cd iac/service && npm ci && npm run build
-      - env:
+      - id: diff
+        env:
           SVC: ${{ needs.prepare.outputs.svc_name }}
           TAG: ${{ needs.prepare.outputs.image_tag }}
           ACCOUNT_ID: ${{ vars.PROD_ACCOUNT_ID }}
           REGION: ${{ vars.PROD_REGION }}
         run: |
           cd iac/service
-          echo "::group::Prod Diff"
-          npx cdk diff "awsdemo-prod-$SVC" --exclusively \
+          if npx cdk diff "awsdemo-prod-$SVC" --exclusively \
             -c env=prod -c "tag:$SVC=$TAG" \
             -c "account=$ACCOUNT_ID" -c "region=$REGION" \
-            --no-color 2>&1 || true
-          echo "::endgroup::"
+            --quiet --fail --no-color > /tmp/diff.txt 2>&1; then
+            echo "has_diff=false" >> "$GITHUB_OUTPUT"
+            echo "No changes detected"
+          else
+            echo "has_diff=true" >> "$GITHUB_OUTPUT"
+            cat /tmp/diff.txt
+          fi
 
   prod-deploy:
     needs: [prepare, prod-diff]
+    if: needs.prod-diff.outputs.has_diff == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:
