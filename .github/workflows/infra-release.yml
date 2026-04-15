@@ -1,0 +1,152 @@
+name: Infra Release
+
+on:
+  push:
+    tags: ['infra/v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # ── Staging ──────────────────────────────────────────────
+  staging-diff:
+    runs-on: ubuntu-latest
+    outputs:
+      has_diff: ${{ steps.diff.outputs.has_diff }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: iac/infra/package-lock.json
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.STAGING_ROLE_ARN }}
+          aws-region: ${{ vars.STAGING_REGION }}
+      - run: cd iac/infra && npm ci && npm run build
+      - id: diff
+        env:
+          ACCOUNT_ID: ${{ vars.STAGING_ACCOUNT_ID }}
+          REGION: ${{ vars.STAGING_REGION }}
+        run: |
+          cd iac/infra
+          if npx cdk diff --all --quiet --fail \
+            -c env=staging -c "account=$ACCOUNT_ID" -c "region=$REGION" \
+            --no-color > /tmp/diff.txt 2>&1; then
+            echo "has_diff=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_diff=true" >> "$GITHUB_OUTPUT"
+            cat /tmp/diff.txt
+          fi
+
+  staging-deploy:
+    needs: staging-diff
+    if: needs.staging-diff.outputs.has_diff == 'true'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: iac/infra/package-lock.json
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.STAGING_ROLE_ARN }}
+          aws-region: ${{ vars.STAGING_REGION }}
+      - env:
+          ACCOUNT_ID: ${{ vars.STAGING_ACCOUNT_ID }}
+          REGION: ${{ vars.STAGING_REGION }}
+        run: |
+          cd iac/infra && npm ci && npm run build
+          npx cdk deploy --all -c env=staging \
+            -c "account=$ACCOUNT_ID" -c "region=$REGION" \
+            --require-approval never
+
+      - name: Notify WeCom
+        if: always()
+        env:
+          STATUS: ${{ job.status }}
+          WEBHOOK: ${{ secrets.WECOM_WEBHOOK_URL }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          [[ -z "$WEBHOOK" ]] && exit 0
+          EMOJI=$([[ "$STATUS" == "success" ]] && echo "✅" || echo "❌")
+          curl -s -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            -d "{\"msgtype\":\"markdown\",\"markdown\":{\"content\":\"$EMOJI **$STATUS** Infra staging deployed\\n> Tag: \`$REF_NAME\`\"}}"
+
+  # ── Prod ─────────────────────────────────────────────────
+  prod-diff:
+    needs: [staging-diff, staging-deploy]
+    if: always() && (needs.staging-deploy.result == 'success' || needs.staging-diff.outputs.has_diff == 'false')
+    runs-on: ubuntu-latest
+    outputs:
+      has_diff: ${{ steps.diff.outputs.has_diff }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: iac/infra/package-lock.json
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.PROD_ROLE_ARN }}
+          aws-region: ${{ vars.PROD_REGION }}
+      - run: cd iac/infra && npm ci && npm run build
+      - id: diff
+        env:
+          ACCOUNT_ID: ${{ vars.PROD_ACCOUNT_ID }}
+          REGION: ${{ vars.PROD_REGION }}
+        run: |
+          cd iac/infra
+          if npx cdk diff --all --quiet --fail \
+            -c env=prod -c "account=$ACCOUNT_ID" -c "region=$REGION" \
+            --no-color > /tmp/diff.txt 2>&1; then
+            echo "has_diff=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_diff=true" >> "$GITHUB_OUTPUT"
+            cat /tmp/diff.txt
+          fi
+
+  prod-deploy:
+    needs: prod-diff
+    if: needs.prod-diff.outputs.has_diff == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: iac/infra/package-lock.json
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.PROD_ROLE_ARN }}
+          aws-region: ${{ vars.PROD_REGION }}
+      - env:
+          ACCOUNT_ID: ${{ vars.PROD_ACCOUNT_ID }}
+          REGION: ${{ vars.PROD_REGION }}
+        run: |
+          cd iac/infra && npm ci && npm run build
+          npx cdk deploy --all -c env=prod \
+            -c "account=$ACCOUNT_ID" -c "region=$REGION" \
+            --require-approval never
+
+      - name: Notify WeCom
+        if: always()
+        env:
+          STATUS: ${{ job.status }}
+          WEBHOOK: ${{ secrets.WECOM_WEBHOOK_URL }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          [[ -z "$WEBHOOK" ]] && exit 0
+          EMOJI=$([[ "$STATUS" == "success" ]] && echo "✅" || echo "❌")
+          curl -s -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            -d "{\"msgtype\":\"markdown\",\"markdown\":{\"content\":\"$EMOJI **$STATUS** Infra PRODUCTION deployed\\n> Tag: \`$REF_NAME\`\"}}"

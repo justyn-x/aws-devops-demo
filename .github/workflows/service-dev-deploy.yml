@@ -1,0 +1,165 @@
+name: Service Dev Deploy
+
+on:
+  push:
+    branches:
+      - 'feat/**'
+      - 'fix/**'
+      - 'refactor/**'
+      - 'test/**'
+      - 'style/**'
+      - 'perf/**'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-svc-dev-${{ github.ref }}
+
+jobs:
+  # ── 解析 --deploy= flag ─────────────────────────────────
+  parse:
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.parse.outputs.should_deploy }}
+      services_matrix: ${{ steps.parse.outputs.services_matrix }}
+      services_csv: ${{ steps.parse.outputs.services_csv }}
+      image_tag: ${{ steps.parse.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: parse
+        env:
+          ACTOR: ${{ github.actor }}
+        run: |
+          MSG=$(git log -1 --pretty=%B)
+          case "$MSG" in
+            *--deploy=*)
+              SERVICES=$(echo "$MSG" | sed -n 's/.*--deploy=\([a-z0-9,-]*\).*/\1/p')
+              IMAGE_TAG="dev-$(git rev-parse --short HEAD)-$ACTOR"
+              # 转成 JSON array 给 matrix 用: "a,b" → '["a","b"]'
+              MATRIX=$(echo "$SERVICES" | tr ',' '\n' | jq -R . | jq -sc .)
+              echo "Services: $SERVICES, Tag: $IMAGE_TAG, Matrix: $MATRIX"
+              echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+              echo "services_matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+              echo "services_csv=$SERVICES" >> "$GITHUB_OUTPUT"
+              echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "No --deploy= flag"
+              echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+  # ── CDK Diff ─────────────────────────────────────────────
+  diff:
+    needs: parse
+    if: needs.parse.outputs.should_deploy == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.parse.outputs.services_matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: iac/service/package-lock.json
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEV_ROLE_ARN }}
+          aws-region: ${{ vars.DEV_REGION }}
+      - run: cd iac/service && npm ci && npm run build
+      - env:
+          SVC: ${{ matrix.service }}
+          IMAGE_TAG: ${{ needs.parse.outputs.image_tag }}
+          ACCOUNT_ID: ${{ vars.DEV_ACCOUNT_ID }}
+          REGION: ${{ vars.DEV_REGION }}
+        run: |
+          cd iac/service
+          echo "::group::Diff $SVC (tag: $IMAGE_TAG)"
+          npx cdk diff "awsdemo-dev-$SVC" --exclusively \
+            -c env=dev -c "tag:$SVC=$IMAGE_TAG" \
+            -c "account=$ACCOUNT_ID" -c "region=$REGION" \
+            --no-color 2>&1 || true
+          echo "::endgroup::"
+
+  # ── Docker Build & Push (并行) ───────────────────────────
+  build:
+    needs: [parse, diff]
+    runs-on: ubuntu-latest
+    environment: dev
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.parse.outputs.services_matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEV_ROLE_ARN }}
+          aws-region: ${{ vars.DEV_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr-login
+      - name: Ensure ECR repo
+        env:
+          SVC: ${{ matrix.service }}
+          REGION: ${{ vars.DEV_REGION }}
+        run: |
+          aws ecr create-repository --repository-name "awsdemo/$SVC" \
+            --image-scanning-configuration scanOnPush=true --region "$REGION" 2>/dev/null || true
+      - uses: docker/build-push-action@v6
+        with:
+          push: true
+          file: deploy/${{ matrix.service }}.Dockerfile
+          tags: ${{ steps.ecr-login.outputs.registry }}/awsdemo/${{ matrix.service }}:${{ needs.parse.outputs.image_tag }}
+          cache-from: type=registry,ref=${{ steps.ecr-login.outputs.registry }}/awsdemo/${{ matrix.service }}:cache
+          cache-to: type=registry,ref=${{ steps.ecr-login.outputs.registry }}/awsdemo/${{ matrix.service }}:cache,mode=max
+
+  # ── CDK Deploy ───────────────────────────────────────────
+  deploy:
+    needs: [parse, build]
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      matrix:
+        service: ${{ fromJson(needs.parse.outputs.services_matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: iac/service/package-lock.json
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEV_ROLE_ARN }}
+          aws-region: ${{ vars.DEV_REGION }}
+      - run: cd iac/service && npm ci && npm run build
+      - env:
+          SVC: ${{ matrix.service }}
+          IMAGE_TAG: ${{ needs.parse.outputs.image_tag }}
+          ACCOUNT_ID: ${{ vars.DEV_ACCOUNT_ID }}
+          REGION: ${{ vars.DEV_REGION }}
+        run: |
+          cd iac/service
+          echo "=== Deploying $SVC (tag: $IMAGE_TAG) ==="
+          npx cdk deploy "awsdemo-dev-$SVC" --exclusively \
+            -c env=dev -c "tag:$SVC=$IMAGE_TAG" \
+            -c "account=$ACCOUNT_ID" -c "region=$REGION" \
+            --require-approval never
+
+      - name: Notify WeCom
+        if: always()
+        env:
+          STATUS: ${{ job.status }}
+          WEBHOOK: ${{ secrets.WECOM_WEBHOOK_URL }}
+          SVC: ${{ matrix.service }}
+          IMAGE_TAG: ${{ needs.parse.outputs.image_tag }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          [[ -z "$WEBHOOK" ]] && exit 0
+          EMOJI=$([[ "$STATUS" == "success" ]] && echo "✅" || echo "❌")
+          curl -s -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            -d "{\"msgtype\":\"markdown\",\"markdown\":{\"content\":\"$EMOJI **$STATUS** $SVC dev deploy\\n> Tag: \`$IMAGE_TAG\`\\n> Actor: $ACTOR\"}}"

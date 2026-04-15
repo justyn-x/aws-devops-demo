@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package user.v1;
+
+option go_package = "github.com/example/todo-service/gen/user/v1;userv1";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "todo/v1/todo.proto";
+
+message User {
+  string id = 1;
+  string name = 2;
+  string email = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message CreateUserRequest {
+  string name = 1;
+  string email = 2;
+}
+
+message CreateUserResponse {
+  User user = 1;
+}
+
+message GetUserRequest {
+  string id = 1;
+}
+
+message GetUserResponse {
+  User user = 1;
+}
+
+message GetUserTodosRequest {
+  string user_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message GetUserTodosResponse {
+  repeated todo.v1.Todo todos = 1;
+  string next_page_token = 2;
+}
+
+service UserService {
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse) {
+    option (google.api.http) = {
+      post: "/v1/users"
+      body: "*"
+    };
+  }
+
+  rpc GetUser(GetUserRequest) returns (GetUserResponse) {
+    option (google.api.http) = {
+      get: "/v1/users/{id}"
+    };
+  }
+
+  rpc GetUserTodos(GetUserTodosRequest) returns (GetUserTodosResponse) {
+    option (google.api.http) = {
+      get: "/v1/users/{user_id}/todos"
+    };
+  }
+}

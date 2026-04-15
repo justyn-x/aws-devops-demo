@@ -1,0 +1,197 @@
+name: Service Release
+
+on:
+  push:
+    tags: ['cmd/*/v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # ── 解析 tag ─────────────────────────────────────────────
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      svc_name: ${{ steps.parse.outputs.svc_name }}
+      image_tag: ${{ steps.parse.outputs.image_tag }}
+    steps:
+      - id: parse
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          SVC_NAME="${TAG#cmd/}"
+          SVC_NAME="${SVC_NAME%%/v*}"
+          IMAGE_TAG="${TAG##*/}"
+          echo "Releasing $SVC_NAME $IMAGE_TAG"
+          echo "svc_name=$SVC_NAME" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+  # ── Docker Build & Push ──────────────────────────────────
+  build-push:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEV_ROLE_ARN }}
+          aws-region: ${{ vars.DEV_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr-login
+      - name: Ensure ECR repo
+        env:
+          SVC: ${{ needs.prepare.outputs.svc_name }}
+          REGION: ${{ vars.DEV_REGION }}
+        run: |
+          aws ecr create-repository --repository-name "awsdemo/$SVC" \
+            --image-scanning-configuration scanOnPush=true --region "$REGION" 2>/dev/null || true
+      - uses: docker/build-push-action@v6
+        with:
+          push: true
+          file: deploy/${{ needs.prepare.outputs.svc_name }}.Dockerfile
+          tags: ${{ steps.ecr-login.outputs.registry }}/awsdemo/${{ needs.prepare.outputs.svc_name }}:${{ needs.prepare.outputs.image_tag }}
+          cache-from: type=registry,ref=${{ steps.ecr-login.outputs.registry }}/awsdemo/${{ needs.prepare.outputs.svc_name }}:cache
+          cache-to: type=registry,ref=${{ steps.ecr-login.outputs.registry }}/awsdemo/${{ needs.prepare.outputs.svc_name }}:cache,mode=max
+
+  # ── Staging ──────────────────────────────────────────────
+  staging-diff:
+    needs: [prepare, build-push]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: iac/service/package-lock.json
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.STAGING_ROLE_ARN }}
+          aws-region: ${{ vars.STAGING_REGION }}
+      - run: cd iac/service && npm ci && npm run build
+      - env:
+          SVC: ${{ needs.prepare.outputs.svc_name }}
+          TAG: ${{ needs.prepare.outputs.image_tag }}
+          ACCOUNT_ID: ${{ vars.STAGING_ACCOUNT_ID }}
+          REGION: ${{ vars.STAGING_REGION }}
+        run: |
+          cd iac/service
+          echo "::group::Staging Diff"
+          npx cdk diff "awsdemo-staging-$SVC" --exclusively \
+            -c env=staging -c "tag:$SVC=$TAG" \
+            -c "account=$ACCOUNT_ID" -c "region=$REGION" \
+            --no-color 2>&1 || true
+          echo "::endgroup::"
+
+  staging-deploy:
+    needs: [prepare, staging-diff]
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: iac/service/package-lock.json
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.STAGING_ROLE_ARN }}
+          aws-region: ${{ vars.STAGING_REGION }}
+      - env:
+          SVC: ${{ needs.prepare.outputs.svc_name }}
+          TAG: ${{ needs.prepare.outputs.image_tag }}
+          ACCOUNT_ID: ${{ vars.STAGING_ACCOUNT_ID }}
+          REGION: ${{ vars.STAGING_REGION }}
+        run: |
+          cd iac/service && npm ci && npm run build
+          npx cdk deploy "awsdemo-staging-$SVC" --exclusively \
+            -c env=staging -c "tag:$SVC=$TAG" \
+            -c "account=$ACCOUNT_ID" -c "region=$REGION" \
+            --require-approval never
+
+      - name: Notify WeCom
+        if: always()
+        env:
+          STATUS: ${{ job.status }}
+          WEBHOOK: ${{ secrets.WECOM_WEBHOOK_URL }}
+          SVC: ${{ needs.prepare.outputs.svc_name }}
+          TAG: ${{ needs.prepare.outputs.image_tag }}
+        run: |
+          [[ -z "$WEBHOOK" ]] && exit 0
+          EMOJI=$([[ "$STATUS" == "success" ]] && echo "✅" || echo "❌")
+          curl -s -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            -d "{\"msgtype\":\"markdown\",\"markdown\":{\"content\":\"$EMOJI **$STATUS** $SVC $TAG staging deployed\"}}"
+
+  # ── Prod ─────────────────────────────────────────────────
+  prod-diff:
+    needs: [prepare, staging-deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: iac/service/package-lock.json
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.PROD_ROLE_ARN }}
+          aws-region: ${{ vars.PROD_REGION }}
+      - run: cd iac/service && npm ci && npm run build
+      - env:
+          SVC: ${{ needs.prepare.outputs.svc_name }}
+          TAG: ${{ needs.prepare.outputs.image_tag }}
+          ACCOUNT_ID: ${{ vars.PROD_ACCOUNT_ID }}
+          REGION: ${{ vars.PROD_REGION }}
+        run: |
+          cd iac/service
+          echo "::group::Prod Diff"
+          npx cdk diff "awsdemo-prod-$SVC" --exclusively \
+            -c env=prod -c "tag:$SVC=$TAG" \
+            -c "account=$ACCOUNT_ID" -c "region=$REGION" \
+            --no-color 2>&1 || true
+          echo "::endgroup::"
+
+  prod-deploy:
+    needs: [prepare, prod-diff]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: iac/service/package-lock.json
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.PROD_ROLE_ARN }}
+          aws-region: ${{ vars.PROD_REGION }}
+      - env:
+          SVC: ${{ needs.prepare.outputs.svc_name }}
+          TAG: ${{ needs.prepare.outputs.image_tag }}
+          ACCOUNT_ID: ${{ vars.PROD_ACCOUNT_ID }}
+          REGION: ${{ vars.PROD_REGION }}
+        run: |
+          cd iac/service && npm ci && npm run build
+          npx cdk deploy "awsdemo-prod-$SVC" --exclusively \
+            -c env=prod -c "tag:$SVC=$TAG" \
+            -c "account=$ACCOUNT_ID" -c "region=$REGION" \
+            --require-approval never
+
+      - name: Notify WeCom
+        if: always()
+        env:
+          STATUS: ${{ job.status }}
+          WEBHOOK: ${{ secrets.WECOM_WEBHOOK_URL }}
+          SVC: ${{ needs.prepare.outputs.svc_name }}
+          TAG: ${{ needs.prepare.outputs.image_tag }}
+        run: |
+          [[ -z "$WEBHOOK" ]] && exit 0
+          EMOJI=$([[ "$STATUS" == "success" ]] && echo "✅" || echo "❌")
+          curl -s -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            -d "{\"msgtype\":\"markdown\",\"markdown\":{\"content\":\"$EMOJI **$STATUS** $SVC $TAG PRODUCTION deployed\"}}"

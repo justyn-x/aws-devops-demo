@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+package todo.v1;
+
+option go_package = "github.com/example/todo-service/gen/todo/v1;todov1";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+
+message Todo {
+  string id = 1;
+  string title = 2;
+  string description = 3;
+  bool completed = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+message CreateTodoRequest {
+  string title = 1;
+  string description = 2;
+}
+
+message CreateTodoResponse {
+  Todo todo = 1;
+}
+
+message GetTodoRequest {
+  string id = 1;
+}
+
+message GetTodoResponse {
+  Todo todo = 1;
+}
+
+message ListTodosRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListTodosResponse {
+  repeated Todo todos = 1;
+  string next_page_token = 2;
+}
+
+message UpdateTodoRequest {
+  Todo todo = 1;
+  google.protobuf.FieldMask update_mask = 2;
+}
+
+message UpdateTodoResponse {
+  Todo todo = 1;
+}
+
+message DeleteTodoRequest {
+  string id = 1;
+}
+
+service TodoService {
+  rpc CreateTodo(CreateTodoRequest) returns (CreateTodoResponse) {
+    option (google.api.http) = {
+      post: "/v1/todos"
+      body: "*"
+    };
+  }
+
+  rpc GetTodo(GetTodoRequest) returns (GetTodoResponse) {
+    option (google.api.http) = {
+      get: "/v1/todos/{id}"
+    };
+  }
+
+  rpc ListTodos(ListTodosRequest) returns (ListTodosResponse) {
+    option (google.api.http) = {
+      get: "/v1/todos"
+    };
+  }
+
+  rpc UpdateTodo(UpdateTodoRequest) returns (UpdateTodoResponse) {
+    option (google.api.http) = {
+      patch: "/v1/todos/{todo.id}"
+      body: "*"
+    };
+  }
+
+  rpc DeleteTodo(DeleteTodoRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v1/todos/{id}"
+    };
+  }
+}

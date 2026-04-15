@@ -1,0 +1,15 @@
+.git
+infra/
+docs/
+.github/
+.claude/
+.cursor/
+.kiro/
+.env
+.env.*
+*.md
+.DS_Store
+bin/
+docker-compose.yml
+.dockerignore
+.mcp.json

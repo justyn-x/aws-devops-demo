@@ -1,0 +1,87 @@
+name: Infra Dev Deploy
+
+on:
+  push:
+    branches: ['iac/infra/dev']
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-infra-dev
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    outputs:
+      has_diff: ${{ steps.diff.outputs.has_diff }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: iac/infra/package-lock.json
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEV_ROLE_ARN }}
+          aws-region: ${{ vars.DEV_REGION }}
+      - run: cd iac/infra && npm ci && npm run build
+      - id: diff
+        env:
+          ACCOUNT_ID: ${{ vars.DEV_ACCOUNT_ID }}
+          REGION: ${{ vars.DEV_REGION }}
+        run: |
+          cd iac/infra
+          if npx cdk diff --all --quiet --fail \
+            -c env=dev -c "account=$ACCOUNT_ID" -c "region=$REGION" \
+            --no-color > /tmp/diff.txt 2>&1; then
+            echo "has_diff=false" >> "$GITHUB_OUTPUT"
+            echo "No infrastructure changes detected"
+          else
+            echo "has_diff=true" >> "$GITHUB_OUTPUT"
+            echo "::group::CDK Diff"
+            cat /tmp/diff.txt
+            echo "::endgroup::"
+          fi
+
+  deploy:
+    needs: diff
+    if: needs.diff.outputs.has_diff == 'true'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: iac/infra/package-lock.json
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.DEV_ROLE_ARN }}
+          aws-region: ${{ vars.DEV_REGION }}
+      - env:
+          ACCOUNT_ID: ${{ vars.DEV_ACCOUNT_ID }}
+          REGION: ${{ vars.DEV_REGION }}
+        run: |
+          cd iac/infra && npm ci && npm run build
+          npx cdk bootstrap -c "account=$ACCOUNT_ID" -c "region=$REGION" 2>/dev/null || true
+          npx cdk deploy --all -c env=dev \
+            -c "account=$ACCOUNT_ID" -c "region=$REGION" \
+            --require-approval never
+
+      - name: Notify WeCom
+        if: always()
+        env:
+          STATUS: ${{ job.status }}
+          WEBHOOK: ${{ secrets.WECOM_WEBHOOK_URL }}
+          REF_NAME: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          [[ -z "$WEBHOOK" ]] && exit 0
+          EMOJI=$([[ "$STATUS" == "success" ]] && echo "✅" || echo "❌")
+          curl -s -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            -d "{\"msgtype\":\"markdown\",\"markdown\":{\"content\":\"$EMOJI **$STATUS** Infra Dev Deploy\\n> Actor: $ACTOR\\n> Ref: \`$REF_NAME\`\"}}"

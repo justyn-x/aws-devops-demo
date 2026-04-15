@@ -1,0 +1,51 @@
+# Binaries
+/bin/
+
+# IDE / editor
+.vscode/
+.idea/
+.cursor/
+
+# AI tools
+.claude/
+.codebuddy/
+.mcp.json
+
+# Environment
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# CDK / TypeScript
+node_modules/
+cdk.out/
+dist/
+iac/infra/lib/**/*.js
+iac/infra/lib/**/*.d.ts
+iac/infra/lib/**/*.js.map
+iac/infra/bin/**/*.js
+iac/infra/bin/**/*.d.ts
+iac/infra/bin/**/*.js.map
+iac/infra/test/**/*.js
+iac/infra/test/**/*.d.ts
+iac/infra/test/**/*.js.map
+iac/service/lib/**/*.js
+iac/service/lib/**/*.d.ts
+iac/service/lib/**/*.js.map
+iac/service/bin/**/*.js
+iac/service/bin/**/*.d.ts
+iac/service/bin/**/*.js.map
+iac/service/test/**/*.js
+iac/service/test/**/*.d.ts
+iac/service/test/**/*.js.map
