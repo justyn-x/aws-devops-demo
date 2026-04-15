@@ -42,6 +42,10 @@ jobs:
           else
             echo "has_diff=true" >> "$GITHUB_OUTPUT"
             cat /tmp/diff.txt
+            echo "### CDK Diff — Infra (staging)" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/diff.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Notify WeCom
@@ -130,6 +134,10 @@ jobs:
           else
             echo "has_diff=true" >> "$GITHUB_OUTPUT"
             cat /tmp/diff.txt
+            echo "### CDK Diff — Infra (prod)" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/diff.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Notify WeCom

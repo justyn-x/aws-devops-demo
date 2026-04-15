@@ -81,6 +81,10 @@ jobs:
             -c "account=$ACCOUNT_ID" -c "region=$REGION" \
             --no-color > /tmp/diff.txt 2>&1 || true
           cat /tmp/diff.txt
+          echo "### CDK Diff — $SVC (dev)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/diff.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Notify WeCom
         if: always()

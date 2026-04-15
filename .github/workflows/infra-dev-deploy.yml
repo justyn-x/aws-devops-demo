@@ -44,6 +44,10 @@ jobs:
             echo "::group::CDK Diff"
             cat /tmp/diff.txt
             echo "::endgroup::"
+            echo "### CDK Diff — Infra (dev)" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/diff.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Notify WeCom
