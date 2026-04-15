@@ -32,8 +32,8 @@ jobs:
     needs: prepare
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@v6
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.DEV_ROLE_ARN }}
           aws-region: ${{ vars.DEV_REGION }}
@@ -46,7 +46,7 @@ jobs:
         run: |
           aws ecr create-repository --repository-name "awsdemo/$SVC" \
             --image-scanning-configuration scanOnPush=true --region "$REGION" 2>/dev/null || true
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           push: true
           file: deploy/${{ needs.prepare.outputs.svc_name }}.Dockerfile
@@ -59,13 +59,13 @@ jobs:
     needs: [prepare, build-push]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: iac/service/package-lock.json
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.STAGING_ROLE_ARN }}
           aws-region: ${{ vars.STAGING_REGION }}
@@ -89,13 +89,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: iac/service/package-lock.json
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.STAGING_ROLE_ARN }}
           aws-region: ${{ vars.STAGING_REGION }}
@@ -130,13 +130,13 @@ jobs:
     needs: [prepare, staging-deploy]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: iac/service/package-lock.json
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.PROD_ROLE_ARN }}
           aws-region: ${{ vars.PROD_REGION }}
@@ -160,13 +160,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: iac/service/package-lock.json
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.PROD_ROLE_ARN }}
           aws-region: ${{ vars.PROD_REGION }}
