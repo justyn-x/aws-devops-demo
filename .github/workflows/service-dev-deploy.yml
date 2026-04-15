@@ -92,16 +92,8 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           [[ -z "$WEBHOOK" ]] && exit 0
-          DIFF=$(head -c 2000 /tmp/diff.txt 2>/dev/null || echo "No diff output")
-          BODY=$(cat <<EOF
-          {
-            "msgtype": "markdown",
-            "markdown": {
-              "content": "📋 **${SVC}** dev CDK Diff\n> Tag: \`${IMAGE_TAG}\`\n> Actor: ${ACTOR}\n\n\`\`\`\n${DIFF}\n\`\`\`\n\n👉 [审批部署](${RUN_URL})"
-            }
-          }
-          EOF
-          )
+          BODY=$(jq -n --arg svc "$SVC" --arg tag "$IMAGE_TAG" --arg actor "$ACTOR" --arg url "$RUN_URL" \
+            '{msgtype:"markdown",markdown:{content:("📋 **" + $svc + "** dev 待部署\n> Tag: `" + $tag + "`\n> Actor: " + $actor + "\n\n👉 [查看 Diff & 审批](" + $url + ")")}}')
           curl -s -X POST "$WEBHOOK" \
             -H 'Content-Type: application/json' \
             -d "$BODY"
@@ -181,15 +173,8 @@ jobs:
         run: |
           [[ -z "$WEBHOOK" ]] && exit 0
           EMOJI=$([[ "$STATUS" == "success" ]] && echo "✅" || echo "❌")
-          BODY=$(cat <<EOF
-          {
-            "msgtype": "markdown",
-            "markdown": {
-              "content": "${EMOJI} **${STATUS}** ${SVC} dev deploy\n> Tag: \`${IMAGE_TAG}\`\n> Actor: ${ACTOR}"
-            }
-          }
-          EOF
-          )
+          BODY=$(jq -n --arg e "$EMOJI" --arg s "$STATUS" --arg svc "$SVC" --arg tag "$IMAGE_TAG" --arg actor "$ACTOR" \
+            '{msgtype:"markdown",markdown:{content:($e + " **" + $s + "** " + $svc + " dev deploy\n> Tag: `" + $tag + "`\n> Actor: " + $actor)}}')
           curl -s -X POST "$WEBHOOK" \
             -H 'Content-Type: application/json' \
             -d "$BODY"
