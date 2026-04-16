@@ -21,6 +21,7 @@ import (
 )
 
 func main() {
+	log.Println("todo-service starting...")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

@@ -37,6 +37,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.DEV_ROLE_ARN }}
           aws-region: ${{ vars.DEV_REGION }}
+      - uses: docker/setup-buildx-action@v4
       - uses: aws-actions/amazon-ecr-login@v2
         id: ecr-login
       - name: Ensure ECR repo
@@ -89,7 +90,26 @@ jobs:
           else
             echo "has_diff=true" >> "$GITHUB_OUTPUT"
             cat /tmp/diff.txt
+            echo "### CDK Diff — $SVC (staging)" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/diff.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Notify WeCom
+        if: steps.diff.outputs.has_diff == 'true'
+        env:
+          WEBHOOK: ${{ secrets.WECOM_WEBHOOK_URL }}
+          SVC: ${{ needs.prepare.outputs.svc_name }}
+          TAG: ${{ needs.prepare.outputs.image_tag }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [[ -z "$WEBHOOK" ]] && exit 0
+          BODY=$(jq -n --arg svc "$SVC" --arg tag "$TAG" --arg url "$RUN_URL" \
+            '{msgtype:"markdown",markdown:{content:("📋 **" + $svc + "** staging 待部署\n> Tag: `" + $tag + "`\n\n👉 [查看 Diff & 审批](" + $url + ")")}}')
+          curl -s -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            -d "$BODY"
 
   staging-deploy:
     needs: [prepare, staging-diff]
@@ -129,9 +149,11 @@ jobs:
         run: |
           [[ -z "$WEBHOOK" ]] && exit 0
           EMOJI=$([[ "$STATUS" == "success" ]] && echo "✅" || echo "❌")
+          BODY=$(jq -n --arg e "$EMOJI" --arg s "$STATUS" --arg svc "$SVC" --arg tag "$TAG" \
+            '{msgtype:"markdown",markdown:{content:($e + " **" + $s + "** " + $svc + " " + $tag + " staging deployed")}}')
           curl -s -X POST "$WEBHOOK" \
             -H 'Content-Type: application/json' \
-            -d "{\"msgtype\":\"markdown\",\"markdown\":{\"content\":\"$EMOJI **$STATUS** $SVC $TAG staging deployed\"}}"
+            -d "$BODY"
 
   # ── Prod ─────────────────────────────────────────────────
   prod-diff:
@@ -169,7 +191,26 @@ jobs:
           else
             echo "has_diff=true" >> "$GITHUB_OUTPUT"
             cat /tmp/diff.txt
+            echo "### CDK Diff — $SVC (prod)" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/diff.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Notify WeCom
+        if: steps.diff.outputs.has_diff == 'true'
+        env:
+          WEBHOOK: ${{ secrets.WECOM_WEBHOOK_URL }}
+          SVC: ${{ needs.prepare.outputs.svc_name }}
+          TAG: ${{ needs.prepare.outputs.image_tag }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [[ -z "$WEBHOOK" ]] && exit 0
+          BODY=$(jq -n --arg svc "$SVC" --arg tag "$TAG" --arg url "$RUN_URL" \
+            '{msgtype:"markdown",markdown:{content:("📋 **" + $svc + "** PROD 待部署\n> Tag: `" + $tag + "`\n\n👉 [查看 Diff & 审批](" + $url + ")")}}')
+          curl -s -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            -d "$BODY"
 
   prod-deploy:
     needs: [prepare, prod-diff]
@@ -209,6 +250,8 @@ jobs:
         run: |
           [[ -z "$WEBHOOK" ]] && exit 0
           EMOJI=$([[ "$STATUS" == "success" ]] && echo "✅" || echo "❌")
+          BODY=$(jq -n --arg e "$EMOJI" --arg s "$STATUS" --arg svc "$SVC" --arg tag "$TAG" \
+            '{msgtype:"markdown",markdown:{content:($e + " **" + $s + "** " + $svc + " " + $tag + " PRODUCTION deployed")}}')
           curl -s -X POST "$WEBHOOK" \
             -H 'Content-Type: application/json' \
-            -d "{\"msgtype\":\"markdown\",\"markdown\":{\"content\":\"$EMOJI **$STATUS** $SVC $TAG PRODUCTION deployed\"}}"
+            -d "$BODY"
