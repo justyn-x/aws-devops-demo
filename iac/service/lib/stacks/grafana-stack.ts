@@ -6,30 +6,39 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import { EnvConfig } from '../config/env-config';
 
 export interface GrafanaStackProps extends cdk.StackProps {
   readonly config: EnvConfig;
   readonly prefix: string;
-  readonly vpc: ec2.IVpc;
-  readonly appSubnets: ec2.SubnetSelection;
-  readonly ecsCluster: ecs.ICluster;
-  readonly albSg: ec2.ISecurityGroup;
-  readonly httpApiId: string;
-  readonly vpcLinkId: string;
   readonly imageTag: string;
+  readonly ssmBase: string;
 }
 
 export class GrafanaStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: GrafanaStackProps) {
     super(scope, id, props);
 
-    if (!props.config.enableGrafana) return;
-
     const grafanaPort = 3000;
 
-    // --- ECR repo (created by CI, like other services) ---
+    // --- Resolve infra resources from SSM (same pattern as ServiceStack) ---
+    const vpcId = ssm.StringParameter.valueFromLookup(this, `${props.ssmBase}/vpc/id`);
+    const vpc = ec2.Vpc.fromLookup(this, 'Vpc', { vpcId });
+
+    const albSgId = ssm.StringParameter.valueForStringParameter(this, `${props.ssmBase}/vpc/alb-sg-id`);
+    const albSg = ec2.SecurityGroup.fromSecurityGroupId(this, 'AlbSg', albSgId);
+
+    const clusterName = ssm.StringParameter.valueForStringParameter(this, `${props.ssmBase}/ecs/cluster-name`);
+    const ecsCluster = ecs.Cluster.fromClusterAttributes(this, 'Cluster', {
+      clusterName, vpc, securityGroups: [],
+    });
+
+    const httpApiId = ssm.StringParameter.valueForStringParameter(this, `${props.ssmBase}/apigw/http-api-id`);
+    const vpcLinkId = ssm.StringParameter.valueForStringParameter(this, `${props.ssmBase}/apigw/vpc-link-id`);
+
+    // --- ECR (created by CI) ---
     const repo = ecr.Repository.fromRepositoryName(this, 'Repo', 'awsdemo/grafana');
     const image = ecs.ContainerImage.fromEcrRepository(repo, props.imageTag);
 
@@ -57,7 +66,6 @@ export class GrafanaStack extends cdk.Stack {
       resources: ['*'],
     }));
 
-    // IAM: Grafana reads CloudWatch, Logs, X-Ray
     taskDef.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
       actions: [
         'cloudwatch:DescribeAlarmsForMetric',
@@ -113,30 +121,26 @@ export class GrafanaStack extends cdk.Stack {
 
     // --- Security Group ---
     const grafanaSg = new ec2.SecurityGroup(this, 'GrafanaSg', {
-      vpc: props.vpc,
-      description: 'Grafana ECS service',
-      allowAllOutbound: true,
+      vpc, description: 'Grafana ECS service', allowAllOutbound: true,
     });
-    grafanaSg.addIngressRule(props.albSg, ec2.Port.tcp(grafanaPort), 'ALB to Grafana');
+    grafanaSg.addIngressRule(albSg, ec2.Port.tcp(grafanaPort), 'ALB to Grafana');
 
     // --- Fargate Service ---
     const service = new ecs.FargateService(this, 'Service', {
       serviceName: `${props.prefix}-grafana`,
-      cluster: props.ecsCluster,
+      cluster: ecsCluster,
       taskDefinition: taskDef,
       desiredCount: 1,
       securityGroups: [grafanaSg],
-      vpcSubnets: props.appSubnets,
+      vpcSubnets: { subnetGroupName: 'App' },
       assignPublicIp: false,
       circuitBreaker: { enable: true, rollback: true },
     });
 
     // --- Internal ALB ---
     const alb = new elbv2.ApplicationLoadBalancer(this, 'Alb', {
-      vpc: props.vpc,
-      internetFacing: false,
-      securityGroup: props.albSg,
-      vpcSubnets: props.appSubnets,
+      vpc, internetFacing: false, securityGroup: albSg,
+      vpcSubnets: { subnetGroupName: 'App' },
     });
 
     const listener = alb.addListener('Listener', {
@@ -149,8 +153,7 @@ export class GrafanaStack extends cdk.Stack {
       port: grafanaPort,
       protocol: elbv2.ApplicationProtocol.HTTP,
       targets: [service.loadBalancerTarget({
-        containerName: 'grafana',
-        containerPort: grafanaPort,
+        containerName: 'grafana', containerPort: grafanaPort,
       })],
       healthCheck: {
         path: '/grafana/api/health',
@@ -164,25 +167,24 @@ export class GrafanaStack extends cdk.Stack {
 
     // --- API Gateway Route: /grafana/* → ALB ---
     const integration = new apigatewayv2.CfnIntegration(this, 'ApiIntegration', {
-      apiId: props.httpApiId,
+      apiId: httpApiId,
       integrationType: 'HTTP_PROXY',
       integrationMethod: 'ANY',
       connectionType: 'VPC_LINK',
-      connectionId: props.vpcLinkId,
+      connectionId: vpcLinkId,
       integrationUri: listener.listenerArn,
       payloadFormatVersion: '1.0',
       requestParameters: { 'overwrite:path': '$request.path' },
     });
 
     new apigatewayv2.CfnRoute(this, 'GrafanaRoute', {
-      apiId: props.httpApiId,
+      apiId: httpApiId,
       routeKey: 'ANY /grafana/{proxy+}',
       target: `integrations/${integration.ref}`,
     });
 
-    // --- Outputs ---
     new cdk.CfnOutput(this, 'GrafanaUrl', {
-      value: `https://${props.httpApiId}.execute-api.${this.region}.amazonaws.com/grafana/`,
+      value: `https://${httpApiId}.execute-api.${this.region}.amazonaws.com/grafana/`,
       description: 'Grafana URL (login: admin / awsdemo2026)',
     });
   }
