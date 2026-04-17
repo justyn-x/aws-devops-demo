@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 public.ecr.aws/docker/library/golang:1.22-alpine AS builder
+FROM --platform=linux/amd64 public.ecr.aws/docker/library/golang:1.24-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
