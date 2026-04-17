@@ -1,5 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cw_actions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
@@ -7,6 +9,7 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as sns from 'aws-cdk-lib/aws-sns';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import { EnvConfig } from '../config/env-config';
@@ -174,7 +177,7 @@ export class ServiceStack extends cdk.Stack {
       open: false,
     });
 
-    listener.addTargets('EcsTargets', {
+    const targetGroup = listener.addTargets('EcsTargets', {
       port: svc.httpPort,
       targets: [this.ecsService.loadBalancerTarget({
         containerName: svc.serviceName,
@@ -221,5 +224,116 @@ export class ServiceStack extends cdk.Stack {
       scaleInCooldown: cdk.Duration.seconds(60),
       scaleOutCooldown: cdk.Duration.seconds(60),
     });
+
+    // --- Monitoring: Dashboard + Alarms ---
+    const svcFullName = `${props.prefix}-${svc.serviceName}`;
+
+    const cpuMetric = this.ecsService.metricCpuUtilization({ period: cdk.Duration.minutes(1) });
+    const memMetric = this.ecsService.metricMemoryUtilization({ period: cdk.Duration.minutes(1) });
+
+    const albFullName = alb.loadBalancerFullName;
+
+    const albResponseTime = new cloudwatch.Metric({
+      namespace: 'AWS/ApplicationELB', metricName: 'TargetResponseTime',
+      dimensionsMap: { LoadBalancer: albFullName, TargetGroup: targetGroup.targetGroupFullName },
+      statistic: 'p99', period: cdk.Duration.minutes(1),
+    });
+    const alb5xx = new cloudwatch.Metric({
+      namespace: 'AWS/ApplicationELB', metricName: 'HTTPCode_Target_5XX_Count',
+      dimensionsMap: { LoadBalancer: albFullName, TargetGroup: targetGroup.targetGroupFullName },
+      statistic: 'Sum', period: cdk.Duration.minutes(5),
+    });
+    const alb4xx = new cloudwatch.Metric({
+      namespace: 'AWS/ApplicationELB', metricName: 'HTTPCode_Target_4XX_Count',
+      dimensionsMap: { LoadBalancer: albFullName, TargetGroup: targetGroup.targetGroupFullName },
+      statistic: 'Sum', period: cdk.Duration.minutes(1),
+    });
+    const healthyHosts = new cloudwatch.Metric({
+      namespace: 'AWS/ApplicationELB', metricName: 'HealthyHostCount',
+      dimensionsMap: { LoadBalancer: albFullName, TargetGroup: targetGroup.targetGroupFullName },
+      statistic: 'Average', period: cdk.Duration.minutes(1),
+    });
+    const unhealthyHosts = new cloudwatch.Metric({
+      namespace: 'AWS/ApplicationELB', metricName: 'UnHealthyHostCount',
+      dimensionsMap: { LoadBalancer: albFullName, TargetGroup: targetGroup.targetGroupFullName },
+      statistic: 'Average', period: cdk.Duration.minutes(1),
+    });
+
+    new cloudwatch.Dashboard(this, 'ServiceDashboard', {
+      dashboardName: svcFullName,
+      widgets: [
+        [
+          new cloudwatch.GraphWidget({
+            title: 'ECS CPU Utilization (%)', width: 8,
+            left: [cpuMetric],
+          }),
+          new cloudwatch.GraphWidget({
+            title: 'ECS Memory Utilization (%)', width: 8,
+            left: [memMetric],
+          }),
+          new cloudwatch.SingleValueWidget({
+            title: 'Running Tasks', width: 8,
+            metrics: [new cloudwatch.Metric({
+              namespace: 'ECS/ContainerInsights', metricName: 'RunningTaskCount',
+              dimensionsMap: { ClusterName: clusterName, ServiceName: svcFullName },
+              statistic: 'Average', period: cdk.Duration.minutes(1),
+            })],
+          }),
+        ],
+        [
+          new cloudwatch.GraphWidget({
+            title: 'ALB Response Time (p99)', width: 8,
+            left: [albResponseTime],
+          }),
+          new cloudwatch.GraphWidget({
+            title: 'ALB Error Counts', width: 8,
+            left: [alb5xx, alb4xx],
+          }),
+          new cloudwatch.GraphWidget({
+            title: 'ALB Host Health', width: 8,
+            left: [healthyHosts, unhealthyHosts],
+          }),
+        ],
+      ],
+    });
+
+    if (config.enableAlarms) {
+      const alarmTopic = new sns.Topic(this, 'ServiceAlarmTopic', {
+        topicName: `${svcFullName}-alarms`,
+      });
+      const alarmAction = new cw_actions.SnsAction(alarmTopic);
+
+      new cloudwatch.Alarm(this, 'CpuAlarm', {
+        metric: cpuMetric.with({ period: cdk.Duration.minutes(5), statistic: 'Average' }),
+        threshold: 80, evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        alarmDescription: `${svcFullName} ECS CPU > 80% for 5min`,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }).addAlarmAction(alarmAction);
+
+      new cloudwatch.Alarm(this, 'MemoryAlarm', {
+        metric: memMetric.with({ period: cdk.Duration.minutes(5), statistic: 'Average' }),
+        threshold: 80, evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        alarmDescription: `${svcFullName} ECS Memory > 80% for 5min`,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }).addAlarmAction(alarmAction);
+
+      new cloudwatch.Alarm(this, 'UnhealthyHostAlarm', {
+        metric: unhealthyHosts.with({ period: cdk.Duration.minutes(5) }),
+        threshold: 0, evaluationPeriods: 2,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        alarmDescription: `${svcFullName} has unhealthy ALB targets`,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }).addAlarmAction(alarmAction);
+
+      new cloudwatch.Alarm(this, 'Target5xxAlarm', {
+        metric: alb5xx,
+        threshold: 5, evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        alarmDescription: `${svcFullName} ALB 5xx errors > 5 in 5min`,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }).addAlarmAction(alarmAction);
+    }
   }
 }
