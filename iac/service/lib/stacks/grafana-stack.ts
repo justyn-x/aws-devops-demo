@@ -106,14 +106,16 @@ export class GrafanaStack extends cdk.Stack {
         GF_SERVER_ROOT_URL: '%(protocol)s://%(domain)s/grafana/',
         GF_SERVER_SERVE_FROM_SUB_PATH: 'true',
         GF_AUTH_ANONYMOUS_ENABLED: 'false',
+        GF_INSTALL_PLUGINS: '',
+        GF_PLUGIN_ADMIN_ENABLED: 'false',
         AWS_REGION: this.region,
       },
       healthCheck: {
         command: ['CMD-SHELL', 'wget -qO- http://localhost:3000/grafana/api/health || exit 1'],
         interval: cdk.Duration.seconds(30),
         timeout: cdk.Duration.seconds(5),
-        retries: 3,
-        startPeriod: cdk.Duration.seconds(30),
+        retries: 5,
+        startPeriod: cdk.Duration.seconds(120),
       },
     });
 
