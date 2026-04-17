@@ -90,7 +90,7 @@ export class ServiceStack extends cdk.Stack {
       DOCUMENTDB_CA_FILE: '/etc/ssl/certs/global-bundle.pem',
       HTTP_PORT: String(svc.httpPort),
       GRPC_PORT: String(svc.grpcPort),
-      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4317',
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'localhost:4317',
       OTEL_SERVICE_NAME: svc.serviceName,
       DEPLOYMENT_ENV: config.envName,
       LOG_LEVEL: 'info',
