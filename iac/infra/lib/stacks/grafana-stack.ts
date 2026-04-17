@@ -82,7 +82,7 @@ export class GrafanaStack extends cdk.Stack {
       functionName: `${props.prefix}-grafana-provision`,
       runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'index.handler',
-      code: lambda.Code.fromAsset(path.join(__dirname, '../grafana')),
+      code: lambda.Code.fromAsset(path.join(__dirname, '..', '..', '..', 'lib', 'grafana')),
       timeout: cdk.Duration.seconds(60),
       environment: {
         WORKSPACE_ID: workspace.attrId,
