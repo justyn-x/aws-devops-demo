@@ -139,14 +139,14 @@ export class GrafanaStack extends cdk.Stack {
       circuitBreaker: { enable: true, rollback: true },
     });
 
-    // --- Internal ALB ---
+    // --- Internal ALB (listen on 8080 to match ALB SG rules, forward to container 3000) ---
     const alb = new elbv2.ApplicationLoadBalancer(this, 'Alb', {
       vpc, internetFacing: false, securityGroup: albSg,
       vpcSubnets: { subnetGroupName: 'App' },
     });
 
     const listener = alb.addListener('Listener', {
-      port: grafanaPort,
+      port: 8080,
       protocol: elbv2.ApplicationProtocol.HTTP,
       open: false,
     });
