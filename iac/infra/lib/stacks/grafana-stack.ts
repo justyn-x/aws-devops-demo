@@ -1,34 +1,64 @@
 import * as cdk from 'aws-cdk-lib';
-import * as cr from 'aws-cdk-lib/custom-resources';
-import * as grafana from 'aws-cdk-lib/aws-grafana';
+import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as ecr from 'aws-cdk-lib/aws-ecr';
+import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import * as path from 'path';
-import * as fs from 'fs';
 import { Construct } from 'constructs';
 import { EnvConfig } from '../config/env-config';
 
 export interface GrafanaStackProps extends cdk.StackProps {
   readonly config: EnvConfig;
   readonly prefix: string;
+  readonly vpc: ec2.IVpc;
+  readonly appSubnets: ec2.SubnetSelection;
+  readonly ecsCluster: ecs.ICluster;
+  readonly albSg: ec2.ISecurityGroup;
+  readonly httpApiId: string;
+  readonly vpcLinkId: string;
+  readonly imageTag: string;
 }
 
 export class GrafanaStack extends cdk.Stack {
-  public readonly workspaceEndpoint: string;
-
   constructor(scope: Construct, id: string, props: GrafanaStackProps) {
     super(scope, id, props);
 
     if (!props.config.enableGrafana) return;
 
-    // --- IAM Role for Grafana to read CloudWatch + X-Ray ---
-    const workspaceRole = new iam.Role(this, 'WorkspaceRole', {
-      roleName: `${props.prefix}-grafana-role`,
-      assumedBy: new iam.ServicePrincipal('grafana.amazonaws.com'),
+    const grafanaPort = 3000;
+
+    // --- ECR repo (created by CI, like other services) ---
+    const repo = ecr.Repository.fromRepositoryName(this, 'Repo', 'awsdemo/grafana');
+    const image = ecs.ContainerImage.fromEcrRepository(repo, props.imageTag);
+
+    // --- Log Group ---
+    const logGroup = new logs.LogGroup(this, 'GrafanaLogs', {
+      logGroupName: `/ecs/${props.prefix}/grafana`,
+      retention: props.config.logRetentionDays,
+      removalPolicy: props.config.removalPolicy,
     });
 
-    workspaceRole.addToPolicy(new iam.PolicyStatement({
+    // --- Task Definition ---
+    const taskDef = new ecs.FargateTaskDefinition(this, 'TaskDef', {
+      family: `${props.prefix}-grafana`,
+      cpu: 256,
+      memoryLimitMiB: 512,
+    });
+
+    taskDef.addToExecutionRolePolicy(new iam.PolicyStatement({
+      actions: [
+        'ecr:GetAuthorizationToken',
+        'ecr:BatchCheckLayerAvailability',
+        'ecr:GetDownloadUrlForLayer',
+        'ecr:BatchGetImage',
+      ],
+      resources: ['*'],
+    }));
+
+    // IAM: Grafana reads CloudWatch, Logs, X-Ray
+    taskDef.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
       actions: [
         'cloudwatch:DescribeAlarmsForMetric',
         'cloudwatch:DescribeAlarmHistory',
@@ -58,75 +88,102 @@ export class GrafanaStack extends cdk.Stack {
       resources: ['*'],
     }));
 
-    // --- Managed Grafana Workspace ---
-    const workspace = new grafana.CfnWorkspace(this, 'Workspace', {
-      accountAccessType: 'CURRENT_ACCOUNT',
-      authenticationProviders: ['SAML'],
-      permissionType: 'CUSTOMER_MANAGED',
-      dataSources: ['CLOUDWATCH', 'XRAY'],
-      name: `${props.prefix}-grafana`,
-      description: `${props.prefix} observability workspace`,
-      grafanaVersion: '10.4',
-      roleArn: workspaceRole.roleArn,
-    });
-
-    this.workspaceEndpoint = workspace.attrEndpoint;
-
-    // --- Lambda for dashboard provisioning ---
-    const logGroup = new logs.LogGroup(this, 'ProvisionLogGroup', {
-      logGroupName: `/aws/lambda/${props.prefix}-grafana-provision`,
-      retention: logs.RetentionDays.ONE_WEEK,
-      removalPolicy: props.config.removalPolicy,
-    });
-
-    // Lambda asset: resolve from package.json location (works with both ts-node and tsc)
-    const infraRoot = path.dirname(require.resolve('../../package.json'));
-
-    const provisionFn = new lambda.Function(this, 'ProvisionDashboards', {
-      functionName: `${props.prefix}-grafana-provision`,
-      runtime: lambda.Runtime.NODEJS_20_X,
-      handler: 'index.handler',
-      code: lambda.Code.fromAsset(path.join(infraRoot, 'lambda')),
-      timeout: cdk.Duration.seconds(60),
+    // --- Container ---
+    const container = taskDef.addContainer('grafana', {
+      image,
+      logging: ecs.LogDriver.awsLogs({ streamPrefix: 'grafana', logGroup }),
       environment: {
-        WORKSPACE_ID: workspace.attrId,
-        REGION: this.region,
-        PREFIX: props.prefix,
+        GF_SECURITY_ADMIN_USER: 'admin',
+        GF_SECURITY_ADMIN_PASSWORD: 'awsdemo2026',
+        GF_SERVER_ROOT_URL: '%(protocol)s://%(domain)s/grafana/',
+        GF_SERVER_SERVE_FROM_SUB_PATH: 'true',
+        GF_AUTH_ANONYMOUS_ENABLED: 'false',
+        AWS_REGION: this.region,
       },
-      logGroup,
+      healthCheck: {
+        command: ['CMD-SHELL', 'wget -qO- http://localhost:3000/grafana/api/health || exit 1'],
+        interval: cdk.Duration.seconds(30),
+        timeout: cdk.Duration.seconds(5),
+        retries: 3,
+        startPeriod: cdk.Duration.seconds(30),
+      },
     });
 
-    provisionFn.addToRolePolicy(new iam.PolicyStatement({
-      actions: [
-        'grafana:CreateWorkspaceApiKey',
-        'grafana:DeleteWorkspaceApiKey',
-        'grafana:DescribeWorkspace',
-      ],
-      resources: [`arn:aws:grafana:${this.region}:${this.account}:/workspaces/${workspace.attrId}`],
-    }));
+    container.addPortMappings({ containerPort: grafanaPort, protocol: ecs.Protocol.TCP });
 
-    // --- Trigger provisioning on every deploy ---
-    const provider = new cr.Provider(this, 'ProvisionProvider', {
-      onEventHandler: provisionFn,
+    // --- Security Group ---
+    const grafanaSg = new ec2.SecurityGroup(this, 'GrafanaSg', {
+      vpc: props.vpc,
+      description: 'Grafana ECS service',
+      allowAllOutbound: true,
+    });
+    grafanaSg.addIngressRule(props.albSg, ec2.Port.tcp(grafanaPort), 'ALB to Grafana');
+
+    // --- Fargate Service ---
+    const service = new ecs.FargateService(this, 'Service', {
+      serviceName: `${props.prefix}-grafana`,
+      cluster: props.ecsCluster,
+      taskDefinition: taskDef,
+      desiredCount: 1,
+      securityGroups: [grafanaSg],
+      vpcSubnets: props.appSubnets,
+      assignPublicIp: false,
+      circuitBreaker: { enable: true, rollback: true },
     });
 
-    new cdk.CustomResource(this, 'ProvisionDashboardsCR', {
-      serviceToken: provider.serviceToken,
-      properties: {
-        // Change this value to force re-provisioning on deploy
-        version: Date.now().toString(),
+    // --- Internal ALB ---
+    const alb = new elbv2.ApplicationLoadBalancer(this, 'Alb', {
+      vpc: props.vpc,
+      internetFacing: false,
+      securityGroup: props.albSg,
+      vpcSubnets: props.appSubnets,
+    });
+
+    const listener = alb.addListener('Listener', {
+      port: grafanaPort,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      open: false,
+    });
+
+    listener.addTargets('GrafanaTarget', {
+      port: grafanaPort,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      targets: [service.loadBalancerTarget({
+        containerName: 'grafana',
+        containerPort: grafanaPort,
+      })],
+      healthCheck: {
+        path: '/grafana/api/health',
+        interval: cdk.Duration.seconds(30),
+        timeout: cdk.Duration.seconds(5),
+        healthyThresholdCount: 2,
+        unhealthyThresholdCount: 3,
       },
+      deregistrationDelay: cdk.Duration.seconds(30),
+    });
+
+    // --- API Gateway Route: /grafana/* → ALB ---
+    const integration = new apigatewayv2.CfnIntegration(this, 'ApiIntegration', {
+      apiId: props.httpApiId,
+      integrationType: 'HTTP_PROXY',
+      integrationMethod: 'ANY',
+      connectionType: 'VPC_LINK',
+      connectionId: props.vpcLinkId,
+      integrationUri: listener.listenerArn,
+      payloadFormatVersion: '1.0',
+      requestParameters: { 'overwrite:path': '$request.path' },
+    });
+
+    new apigatewayv2.CfnRoute(this, 'GrafanaRoute', {
+      apiId: props.httpApiId,
+      routeKey: 'ANY /grafana/{proxy+}',
+      target: `integrations/${integration.ref}`,
     });
 
     // --- Outputs ---
     new cdk.CfnOutput(this, 'GrafanaUrl', {
-      value: `https://${workspace.attrEndpoint}`,
-      description: 'Grafana workspace URL',
-    });
-
-    new cdk.CfnOutput(this, 'GrafanaWorkspaceId', {
-      value: workspace.attrId,
-      description: 'Grafana workspace ID',
+      value: `https://${props.httpApiId}.execute-api.${this.region}.amazonaws.com/grafana/`,
+      description: 'Grafana URL (login: admin / awsdemo2026)',
     });
   }
 }

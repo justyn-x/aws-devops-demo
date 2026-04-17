@@ -56,7 +56,17 @@ ops.addDependency(data);
 
 const grafanaStack = new GrafanaStack(app, `${prefix}-Grafana`, {
   env, config, prefix,
+  vpc: network.vpc,
+  appSubnets: network.appSubnets,
+  ecsCluster: cluster.ecsCluster,
+  albSg: network.albSg,
+  httpApiId: edge.httpApiId,
+  vpcLinkId: edge.vpcLinkId,
+  imageTag: app.node.tryGetContext('tag:grafana') || 'latest',
 });
+grafanaStack.addDependency(network);
+grafanaStack.addDependency(cluster);
+grafanaStack.addDependency(edge);
 
 // --- Outputs Stack: writes infra values to SSM for service app ---
 const outputs = new OutputsStack(app, `${prefix}-Outputs`, {
