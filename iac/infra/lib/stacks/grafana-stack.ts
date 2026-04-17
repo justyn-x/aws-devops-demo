@@ -5,6 +5,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as path from 'path';
+import * as fs from 'fs';
 import { Construct } from 'constructs';
 import { EnvConfig } from '../config/env-config';
 
@@ -78,11 +79,14 @@ export class GrafanaStack extends cdk.Stack {
       removalPolicy: props.config.removalPolicy,
     });
 
+    // Lambda asset: resolve from package.json location (works with both ts-node and tsc)
+    const infraRoot = path.dirname(require.resolve('../../package.json'));
+
     const provisionFn = new lambda.Function(this, 'ProvisionDashboards', {
       functionName: `${props.prefix}-grafana-provision`,
       runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'index.handler',
-      code: lambda.Code.fromAsset(path.join(__dirname, '..', '..', '..', 'lib', 'grafana')),
+      code: lambda.Code.fromAsset(path.join(infraRoot, 'lambda')),
       timeout: cdk.Duration.seconds(60),
       environment: {
         WORKSPACE_ID: workspace.attrId,
