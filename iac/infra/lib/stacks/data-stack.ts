@@ -15,6 +15,7 @@ export interface DataStackProps extends cdk.StackProps {
 export class DataStack extends cdk.Stack {
   public readonly dbHost: string;
   public readonly dbSecretArn: string;
+  public readonly dbClusterIdentifier: string;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
@@ -48,5 +49,6 @@ export class DataStack extends cdk.Stack {
 
     this.dbHost = cluster.clusterEndpoint.hostname;
     this.dbSecretArn = cluster.secret!.secretArn;
+    this.dbClusterIdentifier = `${props.prefix}-docdb`;
   }
 }

@@ -90,6 +90,10 @@ export class ServiceStack extends cdk.Stack {
       DOCUMENTDB_CA_FILE: '/etc/ssl/certs/global-bundle.pem',
       HTTP_PORT: String(svc.httpPort),
       GRPC_PORT: String(svc.grpcPort),
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://localhost:4317',
+      OTEL_SERVICE_NAME: svc.serviceName,
+      DEPLOYMENT_ENV: config.envName,
+      LOG_LEVEL: 'info',
       ...svc.envVars,
     };
 
@@ -127,6 +131,85 @@ export class ServiceStack extends cdk.Stack {
       protocol: ecs.Protocol.TCP,
       appProtocol: ecs.AppProtocol.grpc,
     });
+
+    // --- ADOT Collector Sidecar ---
+    const adotConfigYaml = [
+      'extensions:',
+      '  health_check:',
+      'receivers:',
+      '  otlp:',
+      '    protocols:',
+      '      grpc:',
+      '        endpoint: 0.0.0.0:4317',
+      'processors:',
+      '  batch:',
+      '    timeout: 10s',
+      'exporters:',
+      '  awsxray:',
+      `    region: ${this.region}`,
+      '  awsemf:',
+      `    region: ${this.region}`,
+      `    namespace: AppMetrics/${svc.serviceName}`,
+      `    log_group_name: /ecs/${props.prefix}/${svc.serviceName}/metrics`,
+      'service:',
+      '  extensions: [health_check]',
+      '  pipelines:',
+      '    traces:',
+      '      receivers: [otlp]',
+      '      processors: [batch]',
+      '      exporters: [awsxray]',
+      '    metrics:',
+      '      receivers: [otlp]',
+      '      processors: [batch]',
+      '      exporters: [awsemf]',
+    ].join('\n');
+
+    const adotContainer = taskDef.addContainer('adot-collector', {
+      image: ecs.ContainerImage.fromRegistry('public.ecr.aws/aws-observability/aws-otel-collector:latest'),
+      essential: false,
+      memoryLimitMiB: 256,
+      cpu: 64,
+      environment: {
+        AOT_CONFIG_CONTENT: adotConfigYaml,
+      },
+      logging: ecs.LogDriver.awsLogs({
+        streamPrefix: 'adot',
+        logGroup,
+      }),
+      healthCheck: {
+        command: ['CMD-SHELL', 'wget -qO- http://localhost:13133/ || exit 1'],
+        interval: cdk.Duration.seconds(30),
+        timeout: cdk.Duration.seconds(5),
+        retries: 3,
+        startPeriod: cdk.Duration.seconds(30),
+      },
+    });
+
+    adotContainer.addPortMappings({
+      containerPort: 4317,
+      protocol: ecs.Protocol.TCP,
+    });
+
+    // App container waits for ADOT sidecar to start
+    container.addContainerDependencies({
+      container: adotContainer,
+      condition: ecs.ContainerDependencyCondition.START,
+    });
+
+    // --- ADOT IAM Permissions ---
+    taskDef.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: [
+        'xray:PutTraceSegments',
+        'xray:PutTelemetryRecords',
+        'xray:GetSamplingRules',
+        'xray:GetSamplingTargets',
+        'cloudwatch:PutMetricData',
+        'logs:CreateLogGroup',
+        'logs:CreateLogStream',
+        'logs:PutLogEvents',
+      ],
+      resources: ['*'],
+    }));
 
     // --- Service Connect ---
     const scServices: ecs.ServiceConnectService[] = [
@@ -333,6 +416,26 @@ export class ServiceStack extends cdk.Stack {
         comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         alarmDescription: `${svcFullName} ALB 5xx errors > 5 in 5min`,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }).addAlarmAction(alarmAction);
+
+      new cloudwatch.Alarm(this, 'LatencyP99Alarm', {
+        metric: albResponseTime.with({ period: cdk.Duration.minutes(5) }),
+        threshold: 1, evaluationPeriods: 3,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        alarmDescription: `${svcFullName} ALB p99 latency > 1s for 15min`,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      }).addAlarmAction(alarmAction);
+
+      new cloudwatch.Alarm(this, 'NoRunningTasksAlarm', {
+        metric: new cloudwatch.Metric({
+          namespace: 'ECS/ContainerInsights', metricName: 'RunningTaskCount',
+          dimensionsMap: { ClusterName: clusterName, ServiceName: svcFullName },
+          statistic: 'Average', period: cdk.Duration.minutes(1),
+        }),
+        threshold: 1, evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+        alarmDescription: `${svcFullName} has no running tasks`,
+        treatMissingData: cloudwatch.TreatMissingData.BREACHING,
       }).addAlarmAction(alarmAction);
     }
   }

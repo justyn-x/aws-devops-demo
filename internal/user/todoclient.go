@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	todov1 "github.com/example/todo-service/gen/todo/v1"
+	"github.com/example/todo-service/internal/shared/logger"
 )
 
 type TodoClient struct {
@@ -25,6 +27,10 @@ func NewTodoClient(addr string) (*TodoClient, error) {
 
 	conn, err := grpc.DialContext(ctx, addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+		grpc.WithChainUnaryInterceptor(
+			logger.UnaryClientInterceptor(),
+		),
 		grpc.WithDefaultServiceConfig(`{
 			"methodConfig": [{
 				"name": [{}],

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -11,23 +10,38 @@ import (
 	"syscall"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 
 	todov1 "github.com/example/todo-service/gen/todo/v1"
 	shareddb "github.com/example/todo-service/internal/shared/db"
+	"github.com/example/todo-service/internal/shared/logger"
+	appotel "github.com/example/todo-service/internal/shared/otel"
 	"github.com/example/todo-service/internal/todo"
 )
 
 func main() {
-	log.Println("todo-service starting...")
+	logger.Init()
+	defer zap.L().Sync()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	otelShutdown, err := appotel.Init(ctx, "todo-service", "0.1.0", envOrDefault("DEPLOYMENT_ENV", "dev"))
+	if err != nil {
+		zap.L().Fatal("failed to init otel", zap.Error(err))
+	}
+	defer otelShutdown(ctx)
+
+	zap.L().Info("todo-service starting...")
+
 	conn, err := shareddb.Connect(ctx)
 	if err != nil {
-		log.Fatalf("failed to connect to DocumentDB: %v", err)
+		zap.L().Fatal("failed to connect to DocumentDB", zap.Error(err))
 	}
 	defer conn.Close(ctx)
 
@@ -36,20 +50,25 @@ func main() {
 	grpcPort := envOrDefault("GRPC_PORT", "50051")
 	httpPort := envOrDefault("HTTP_PORT", "8080")
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.ChainUnaryInterceptor(
+			logger.UnaryServerInterceptor(),
+		),
+	)
 	todoSvc := todo.NewService(dbClient)
 	todov1.RegisterTodoServiceServer(grpcServer, todoSvc)
 	reflection.Register(grpcServer)
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", grpcPort))
 	if err != nil {
-		log.Fatalf("failed to listen on port %s: %v", grpcPort, err)
+		zap.L().Fatal("failed to listen on gRPC port", zap.String("port", grpcPort), zap.Error(err))
 	}
 
 	go func() {
-		log.Printf("gRPC server listening on :%s", grpcPort)
+		zap.L().Info("gRPC server listening", zap.String("port", grpcPort))
 		if err := grpcServer.Serve(lis); err != nil {
-			log.Fatalf("failed to serve gRPC: %v", err)
+			zap.L().Fatal("failed to serve gRPC", zap.Error(err))
 		}
 	}()
 
@@ -57,7 +76,7 @@ func main() {
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
 	err = todov1.RegisterTodoServiceHandlerFromEndpoint(ctx, mux, fmt.Sprintf("localhost:%s", grpcPort), opts)
 	if err != nil {
-		log.Fatalf("failed to register gateway: %v", err)
+		zap.L().Fatal("failed to register gateway", zap.Error(err))
 	}
 
 	httpMux := http.NewServeMux()
@@ -67,15 +86,17 @@ func main() {
 	})
 	httpMux.Handle("/", mux)
 
+	handler := logger.Middleware(otelhttp.NewHandler(httpMux, "todo-service-http"))
+
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%s", httpPort),
-		Handler: httpMux,
+		Handler: handler,
 	}
 
 	go func() {
-		log.Printf("HTTP gateway listening on :%s", httpPort)
+		zap.L().Info("HTTP gateway listening", zap.String("port", httpPort))
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("failed to serve HTTP: %v", err)
+			zap.L().Fatal("failed to serve HTTP", zap.Error(err))
 		}
 	}()
 
@@ -83,7 +104,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("shutting down...")
+	zap.L().Info("shutting down...")
 	grpcServer.GracefulStop()
 	httpServer.Shutdown(ctx)
 }

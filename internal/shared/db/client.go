@@ -10,6 +10,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.opentelemetry.io/contrib/instrumentation/go.mongodb.org/mongo-driver/mongo/otelmongo"
 )
 
 // Conn holds a MongoDB client and provides access to databases.
@@ -43,6 +44,7 @@ func Connect(ctx context.Context) (*Conn, error) {
 		opts.SetTLSConfig(tlsConfig)
 	}
 
+	opts.SetMonitor(otelmongo.NewMonitor())
 	opts.SetRetryWrites(false) // Required for DocumentDB
 
 	client, err := mongo.Connect(ctx, opts)

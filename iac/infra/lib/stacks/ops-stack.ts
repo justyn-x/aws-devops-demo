@@ -9,6 +9,7 @@ export interface OpsStackProps extends cdk.StackProps {
   readonly config: EnvConfig;
   readonly prefix: string;
   readonly httpApiId: string;
+  readonly docdbClusterIdentifier: string;
 }
 
 export class OpsStack extends cdk.Stack {
@@ -25,6 +26,7 @@ export class OpsStack extends cdk.Stack {
 
     const alarmAction = new cw_actions.SnsAction(alarmTopic);
 
+    // --- API Gateway Alarms ---
     const api5xx = new cloudwatch.Metric({
       namespace: 'AWS/ApiGateway', metricName: '5xx',
       dimensionsMap: { ApiId: props.httpApiId },
@@ -51,25 +53,95 @@ export class OpsStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     }).addAlarmAction(alarmAction);
 
+    // --- DocumentDB Metrics ---
+    const docdbDims = { DBClusterIdentifier: props.docdbClusterIdentifier };
+
+    const docdbCpu = new cloudwatch.Metric({
+      namespace: 'AWS/DocDB', metricName: 'CPUUtilization',
+      dimensionsMap: docdbDims, statistic: 'Average', period: cdk.Duration.minutes(1),
+    });
+    const docdbMemory = new cloudwatch.Metric({
+      namespace: 'AWS/DocDB', metricName: 'FreeableMemory',
+      dimensionsMap: docdbDims, statistic: 'Average', period: cdk.Duration.minutes(1),
+    });
+    const docdbConnections = new cloudwatch.Metric({
+      namespace: 'AWS/DocDB', metricName: 'DatabaseConnections',
+      dimensionsMap: docdbDims, statistic: 'Sum', period: cdk.Duration.minutes(1),
+    });
+    const docdbReadLatency = new cloudwatch.Metric({
+      namespace: 'AWS/DocDB', metricName: 'ReadLatency',
+      dimensionsMap: docdbDims, statistic: 'Average', period: cdk.Duration.minutes(1),
+    });
+    const docdbWriteLatency = new cloudwatch.Metric({
+      namespace: 'AWS/DocDB', metricName: 'WriteLatency',
+      dimensionsMap: docdbDims, statistic: 'Average', period: cdk.Duration.minutes(1),
+    });
+
+    // --- DocumentDB Alarms ---
+    new cloudwatch.Alarm(this, 'DocDbCpuAlarm', {
+      metric: docdbCpu.with({ period: cdk.Duration.minutes(5) }),
+      threshold: 80, evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      alarmDescription: `${props.prefix} DocumentDB CPU > 80% for 5min`,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    }).addAlarmAction(alarmAction);
+
+    new cloudwatch.Alarm(this, 'DocDbMemoryAlarm', {
+      metric: docdbMemory.with({ period: cdk.Duration.minutes(5) }),
+      threshold: 256 * 1024 * 1024, evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+      alarmDescription: `${props.prefix} DocumentDB FreeableMemory < 256MB for 5min`,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    }).addAlarmAction(alarmAction);
+
+    new cloudwatch.Alarm(this, 'DocDbConnectionsAlarm', {
+      metric: docdbConnections.with({ period: cdk.Duration.minutes(5) }),
+      threshold: config.docdbConnectionAlarmThreshold, evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      alarmDescription: `${props.prefix} DocumentDB connections > ${config.docdbConnectionAlarmThreshold} for 5min`,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    }).addAlarmAction(alarmAction);
+
+    // --- Dashboard ---
     new cloudwatch.Dashboard(this, 'Dashboard', {
       dashboardName: `${props.prefix}`,
-      widgets: [[
-        new cloudwatch.GraphWidget({
-          title: 'API Gateway Requests', width: 8,
-          left: [new cloudwatch.Metric({ namespace: 'AWS/ApiGateway', metricName: 'Count', dimensionsMap: { ApiId: props.httpApiId }, statistic: 'Sum', period: cdk.Duration.minutes(1) })],
-        }),
-        new cloudwatch.GraphWidget({
-          title: 'API Gateway Errors', width: 8,
-          left: [
-            new cloudwatch.Metric({ namespace: 'AWS/ApiGateway', metricName: '4xx', dimensionsMap: { ApiId: props.httpApiId }, statistic: 'Sum', period: cdk.Duration.minutes(1) }),
-            new cloudwatch.Metric({ namespace: 'AWS/ApiGateway', metricName: '5xx', dimensionsMap: { ApiId: props.httpApiId }, statistic: 'Sum', period: cdk.Duration.minutes(1) }),
-          ],
-        }),
-        new cloudwatch.GraphWidget({
-          title: 'API Gateway Latency', width: 8,
-          left: [apiLatency],
-        }),
-      ]],
+      widgets: [
+        [
+          new cloudwatch.GraphWidget({
+            title: 'API Gateway Requests', width: 8,
+            left: [new cloudwatch.Metric({ namespace: 'AWS/ApiGateway', metricName: 'Count', dimensionsMap: { ApiId: props.httpApiId }, statistic: 'Sum', period: cdk.Duration.minutes(1) })],
+          }),
+          new cloudwatch.GraphWidget({
+            title: 'API Gateway Errors', width: 8,
+            left: [
+              new cloudwatch.Metric({ namespace: 'AWS/ApiGateway', metricName: '4xx', dimensionsMap: { ApiId: props.httpApiId }, statistic: 'Sum', period: cdk.Duration.minutes(1) }),
+              new cloudwatch.Metric({ namespace: 'AWS/ApiGateway', metricName: '5xx', dimensionsMap: { ApiId: props.httpApiId }, statistic: 'Sum', period: cdk.Duration.minutes(1) }),
+            ],
+          }),
+          new cloudwatch.GraphWidget({
+            title: 'API Gateway Latency (p99)', width: 8,
+            left: [apiLatency],
+          }),
+        ],
+        [
+          new cloudwatch.GraphWidget({
+            title: 'DocumentDB CPU (%)', width: 6,
+            left: [docdbCpu],
+          }),
+          new cloudwatch.GraphWidget({
+            title: 'DocumentDB FreeableMemory', width: 6,
+            left: [docdbMemory],
+          }),
+          new cloudwatch.GraphWidget({
+            title: 'DocumentDB Connections', width: 6,
+            left: [docdbConnections],
+          }),
+          new cloudwatch.GraphWidget({
+            title: 'DocumentDB Latency', width: 6,
+            left: [docdbReadLatency, docdbWriteLatency],
+          }),
+        ],
+      ],
     });
   }
 }
