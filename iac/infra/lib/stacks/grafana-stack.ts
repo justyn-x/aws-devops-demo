@@ -21,15 +21,39 @@ export class GrafanaStack extends cdk.Stack {
 
     if (!props.config.enableGrafana) return;
 
+    // --- IAM Role for Grafana to read CloudWatch + X-Ray ---
+    const workspaceRole = new iam.Role(this, 'WorkspaceRole', {
+      roleName: `${props.prefix}-grafana-role`,
+      assumedBy: new iam.ServicePrincipal('grafana.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonGrafanaCloudWatchAccess'),
+      ],
+    });
+
+    workspaceRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        'xray:GetTraceSummaries',
+        'xray:BatchGetTraces',
+        'xray:GetServiceGraph',
+        'xray:GetTraceGraph',
+        'xray:GetInsightSummaries',
+        'xray:GetGroups',
+        'xray:GetGroup',
+        'xray:GetTimeSeriesServiceStatistics',
+      ],
+      resources: ['*'],
+    }));
+
     // --- Managed Grafana Workspace ---
     const workspace = new grafana.CfnWorkspace(this, 'Workspace', {
       accountAccessType: 'CURRENT_ACCOUNT',
       authenticationProviders: ['AWS_SSO'],
-      permissionType: 'SERVICE_MANAGED',
+      permissionType: 'CUSTOMER_MANAGED',
       dataSources: ['CLOUDWATCH', 'XRAY'],
       name: `${props.prefix}-grafana`,
       description: `${props.prefix} observability workspace`,
       grafanaVersion: '10.4',
+      roleArn: workspaceRole.roleArn,
     });
 
     this.workspaceEndpoint = workspace.attrEndpoint;
