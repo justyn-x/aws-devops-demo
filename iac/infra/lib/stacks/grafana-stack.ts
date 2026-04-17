@@ -100,8 +100,9 @@ export class GrafanaStack extends cdk.Stack {
       actions: [
         'grafana:CreateWorkspaceApiKey',
         'grafana:DeleteWorkspaceApiKey',
+        'grafana:DescribeWorkspace',
       ],
-      resources: [workspace.attrGrafanaVersion ? `arn:aws:grafana:${this.region}:${this.account}:/workspaces/${workspace.attrId}` : '*'],
+      resources: [`arn:aws:grafana:${this.region}:${this.account}:/workspaces/${workspace.attrId}`],
     }));
 
     // --- Trigger provisioning on every deploy ---
