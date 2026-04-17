@@ -1,0 +1,233 @@
+{
+  "uid": "infra-overview",
+  "title": "Infrastructure Overview",
+  "tags": ["${PREFIX}", "infra"],
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "region",
+        "type": "custom",
+        "current": { "text": "us-east-1", "value": "us-east-1" },
+        "options": [
+          { "text": "us-east-1", "value": "us-east-1", "selected": true }
+        ],
+        "query": "us-east-1"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "API Gateway",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
+    },
+    {
+      "title": "Request Count",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "targets": [{
+        "namespace": "AWS/ApiGateway",
+        "metricName": "Count",
+        "statistic": "Sum",
+        "period": "60",
+        "region": "$region",
+        "label": "Requests"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "bars" },
+          "color": { "fixedColor": "blue", "mode": "fixed" }
+        }
+      }
+    },
+    {
+      "title": "Error Rates (4xx / 5xx)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "targets": [
+        {
+          "namespace": "AWS/ApiGateway",
+          "metricName": "4xx",
+          "statistic": "Sum",
+          "period": "60",
+          "region": "$region",
+          "label": "4xx"
+        },
+        {
+          "namespace": "AWS/ApiGateway",
+          "metricName": "5xx",
+          "statistic": "Sum",
+          "period": "60",
+          "region": "$region",
+          "label": "5xx"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 10, "lineWidth": 2 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "5xx" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "4xx" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "title": "Latency (p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "targets": [{
+        "namespace": "AWS/ApiGateway",
+        "metricName": "Latency",
+        "statistic": "p99",
+        "period": "60",
+        "region": "$region",
+        "label": "p99"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "fillOpacity": 10, "lineWidth": 2 },
+          "color": { "fixedColor": "purple", "mode": "fixed" }
+        }
+      }
+    },
+    {
+      "title": "DocumentDB",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "collapsed": false
+    },
+    {
+      "title": "CPU Utilization (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 10 },
+      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "targets": [{
+        "namespace": "AWS/DocDB",
+        "metricName": "CPUUtilization",
+        "dimensions": { "DBClusterIdentifier": ["${PREFIX}-docdb"] },
+        "statistic": "Average",
+        "period": "60",
+        "region": "$region"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "red", "value": 80 }
+            ]
+          },
+          "custom": { "fillOpacity": 10, "lineWidth": 2, "thresholdsStyle": { "mode": "line" } }
+        }
+      }
+    },
+    {
+      "title": "Freeable Memory",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 10 },
+      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "targets": [{
+        "namespace": "AWS/DocDB",
+        "metricName": "FreeableMemory",
+        "dimensions": { "DBClusterIdentifier": ["${PREFIX}-docdb"] },
+        "statistic": "Average",
+        "period": "60",
+        "region": "$region"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "fillOpacity": 10, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "title": "Active Connections",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 10 },
+      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "targets": [{
+        "namespace": "AWS/DocDB",
+        "metricName": "DatabaseConnections",
+        "dimensions": { "DBClusterIdentifier": ["${PREFIX}-docdb"] },
+        "statistic": "Sum",
+        "period": "60",
+        "region": "$region"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "red", "value": 50 }
+            ]
+          },
+          "max": 100
+        }
+      }
+    },
+    {
+      "title": "Read / Write Latency",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 10 },
+      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "targets": [
+        {
+          "namespace": "AWS/DocDB",
+          "metricName": "ReadLatency",
+          "dimensions": { "DBClusterIdentifier": ["${PREFIX}-docdb"] },
+          "statistic": "Average",
+          "period": "60",
+          "region": "$region",
+          "label": "Read"
+        },
+        {
+          "namespace": "AWS/DocDB",
+          "metricName": "WriteLatency",
+          "dimensions": { "DBClusterIdentifier": ["${PREFIX}-docdb"] },
+          "statistic": "Average",
+          "period": "60",
+          "region": "$region",
+          "label": "Write"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 10, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "title": "Alarm Status",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "collapsed": false
+    },
+    {
+      "title": "CloudWatch Alarms",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 19 },
+      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+      "targets": [{
+        "namespace": "AWS/CloudWatch",
+        "metricName": "StateValue",
+        "region": "$region",
+        "queryMode": "Metrics"
+      }]
+    }
+  ],
+  "time": { "from": "now-3h", "to": "now" },
+  "refresh": "1m",
+  "schemaVersion": 39
+}

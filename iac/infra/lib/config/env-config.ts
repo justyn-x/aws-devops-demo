@@ -18,6 +18,7 @@ export interface EnvConfig {
   // Monitoring
   readonly enableAlarms: boolean;
   readonly docdbConnectionAlarmThreshold: number;
+  readonly enableGrafana: boolean;
 
   // Common
   readonly removalPolicy: cdk.RemovalPolicy;
@@ -36,6 +37,7 @@ export const envConfigs: Record<string, EnvConfig> = {
     deletionProtection: false,
     enableAlarms: true,
     docdbConnectionAlarmThreshold: 50,
+    enableGrafana: true,
     removalPolicy: cdk.RemovalPolicy.DESTROY,
     logRetentionDays: logs.RetentionDays.ONE_WEEK,
   },
@@ -50,6 +52,7 @@ export const envConfigs: Record<string, EnvConfig> = {
     deletionProtection: false,
     enableAlarms: true,
     docdbConnectionAlarmThreshold: 100,
+    enableGrafana: true,
     removalPolicy: cdk.RemovalPolicy.RETAIN,
     logRetentionDays: logs.RetentionDays.ONE_WEEK,
   },
@@ -64,6 +67,7 @@ export const envConfigs: Record<string, EnvConfig> = {
     deletionProtection: false,
     enableAlarms: true,
     docdbConnectionAlarmThreshold: 200,
+    enableGrafana: true,
     removalPolicy: cdk.RemovalPolicy.RETAIN,
     logRetentionDays: logs.RetentionDays.ONE_WEEK,
   },
