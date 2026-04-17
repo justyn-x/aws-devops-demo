@@ -25,13 +25,26 @@ export class GrafanaStack extends cdk.Stack {
     const workspaceRole = new iam.Role(this, 'WorkspaceRole', {
       roleName: `${props.prefix}-grafana-role`,
       assumedBy: new iam.ServicePrincipal('grafana.amazonaws.com'),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonGrafanaCloudWatchAccess'),
-      ],
     });
 
     workspaceRole.addToPolicy(new iam.PolicyStatement({
       actions: [
+        'cloudwatch:DescribeAlarmsForMetric',
+        'cloudwatch:DescribeAlarmHistory',
+        'cloudwatch:DescribeAlarms',
+        'cloudwatch:ListMetrics',
+        'cloudwatch:GetMetricData',
+        'cloudwatch:GetInsightRuleReport',
+        'ec2:DescribeTags',
+        'ec2:DescribeInstances',
+        'ec2:DescribeRegions',
+        'tag:GetResources',
+        'logs:DescribeLogGroups',
+        'logs:GetLogGroupFields',
+        'logs:StartQuery',
+        'logs:StopQuery',
+        'logs:GetQueryResults',
+        'logs:GetLogEvents',
         'xray:GetTraceSummaries',
         'xray:BatchGetTraces',
         'xray:GetServiceGraph',
