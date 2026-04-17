@@ -21,7 +21,7 @@ export class GrafanaStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: GrafanaStackProps) {
     super(scope, id, props);
 
-    const grafanaPort = 3000;
+    const grafanaPort = 8080;
 
     // --- Resolve infra resources from SSM (same pattern as ServiceStack) ---
     const vpcId = ssm.StringParameter.valueFromLookup(this, `${props.ssmBase}/vpc/id`);
@@ -29,6 +29,9 @@ export class GrafanaStack extends cdk.Stack {
 
     const albSgId = ssm.StringParameter.valueForStringParameter(this, `${props.ssmBase}/vpc/alb-sg-id`);
     const albSg = ec2.SecurityGroup.fromSecurityGroupId(this, 'AlbSg', albSgId);
+
+    const ecsSgId = ssm.StringParameter.valueForStringParameter(this, `${props.ssmBase}/vpc/ecs-sg-id`);
+    const ecsSg = ec2.SecurityGroup.fromSecurityGroupId(this, 'EcsSg', ecsSgId);
 
     const clusterName = ssm.StringParameter.valueForStringParameter(this, `${props.ssmBase}/ecs/cluster-name`);
     const ecsCluster = ecs.Cluster.fromClusterAttributes(this, 'Cluster', {
@@ -103,6 +106,7 @@ export class GrafanaStack extends cdk.Stack {
       environment: {
         GF_SECURITY_ADMIN_USER: 'admin',
         GF_SECURITY_ADMIN_PASSWORD: 'awsdemo2026',
+        GF_SERVER_HTTP_PORT: '8080',
         GF_SERVER_ROOT_URL: '%(protocol)s://%(domain)s/grafana/',
         GF_SERVER_SERVE_FROM_SUB_PATH: 'true',
         GF_AUTH_ANONYMOUS_ENABLED: 'false',
@@ -111,7 +115,7 @@ export class GrafanaStack extends cdk.Stack {
         AWS_REGION: this.region,
       },
       healthCheck: {
-        command: ['CMD-SHELL', 'wget -qO- http://localhost:3000/grafana/api/health || exit 1'],
+        command: ['CMD-SHELL', 'wget -qO- http://localhost:8080/grafana/api/health || exit 1'],
         interval: cdk.Duration.seconds(30),
         timeout: cdk.Duration.seconds(5),
         retries: 5,
@@ -121,19 +125,13 @@ export class GrafanaStack extends cdk.Stack {
 
     container.addPortMappings({ containerPort: grafanaPort, protocol: ecs.Protocol.TCP });
 
-    // --- Security Group ---
-    const grafanaSg = new ec2.SecurityGroup(this, 'GrafanaSg', {
-      vpc, description: 'Grafana ECS service', allowAllOutbound: true,
-    });
-    grafanaSg.addIngressRule(albSg, ec2.Port.tcp(grafanaPort), 'ALB to Grafana');
-
-    // --- Fargate Service ---
+    // --- Fargate Service (reuse ECS SG — ALB SG already allows egress to ECS SG on 8080) ---
     const service = new ecs.FargateService(this, 'Service', {
       serviceName: `${props.prefix}-grafana`,
       cluster: ecsCluster,
       taskDefinition: taskDef,
       desiredCount: 1,
-      securityGroups: [grafanaSg],
+      securityGroups: [ecsSg],
       vpcSubnets: { subnetGroupName: 'App' },
       assignPublicIp: false,
       circuitBreaker: { enable: true, rollback: true },
