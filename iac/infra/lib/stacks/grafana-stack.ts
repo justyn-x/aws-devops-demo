@@ -60,7 +60,7 @@ export class GrafanaStack extends cdk.Stack {
     // --- Managed Grafana Workspace ---
     const workspace = new grafana.CfnWorkspace(this, 'Workspace', {
       accountAccessType: 'CURRENT_ACCOUNT',
-      authenticationProviders: ['AWS_SSO'],
+      authenticationProviders: ['SAML'],
       permissionType: 'CUSTOMER_MANAGED',
       dataSources: ['CLOUDWATCH', 'XRAY'],
       name: `${props.prefix}-grafana`,
