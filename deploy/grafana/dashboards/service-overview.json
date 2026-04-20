@@ -16,7 +16,14 @@
         "name": "service",
         "type": "query",
         "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-        "query": "dimension_values(${REGION},AWS/ECS,CPUUtilization,ServiceName,{ClusterName=$prefix})",
+        "query": {
+          "queryType": "dimensionValues",
+          "namespace": "AWS/ECS",
+          "metricName": "CPUUtilization",
+          "dimensionKey": "ServiceName",
+          "dimensionFilters": { "ClusterName": ["$prefix"] },
+          "region": "default"
+        },
         "regex": "/$prefix-(.+)/",
         "refresh": 1,
         "sort": 1,
