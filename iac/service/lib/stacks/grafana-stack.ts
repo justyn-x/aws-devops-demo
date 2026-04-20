@@ -112,6 +112,8 @@ export class GrafanaStack extends cdk.Stack {
         GF_AUTH_ANONYMOUS_ENABLED: 'false',
         GF_INSTALL_PLUGINS: '',
         GF_PLUGIN_ADMIN_ENABLED: 'false',
+        PREFIX: props.prefix,
+        REGION: this.region,
         AWS_REGION: this.region,
       },
       healthCheck: {
