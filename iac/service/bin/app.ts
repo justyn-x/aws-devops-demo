@@ -4,6 +4,7 @@ import * as cdk from 'aws-cdk-lib';
 import { envConfigs } from '../lib/config/env-config';
 import { serviceConfigs } from '../lib/config/service-configs';
 import { ServiceStack } from '../lib/stacks/service-stack';
+import { GrafanaStack } from '../lib/stacks/grafana-stack';
 
 const app = new cdk.App();
 const envName = app.node.tryGetContext('env') || 'dev';
@@ -29,6 +30,16 @@ for (const [svcName, svcConfig] of Object.entries(serviceConfigs)) {
     env, config, prefix,
     serviceConfig: svcConfig,
     imageTag,
+    ssmBase,
+  });
+}
+
+// --- Grafana (deployed via --deploy=grafana) ---
+const grafanaTag = app.node.tryGetContext('tag:grafana');
+if (grafanaTag) {
+  new GrafanaStack(app, `${prefix}-grafana`, {
+    env, config, prefix,
+    imageTag: grafanaTag,
     ssmBase,
   });
 }

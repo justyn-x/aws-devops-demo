@@ -12,6 +12,9 @@ export interface EnvConfig {
   readonly ecsMaxCapacity: number;
   readonly cpuTargetUtilization: number;
 
+  // Monitoring
+  readonly enableAlarms: boolean;
+
   // Common
   readonly removalPolicy: cdk.RemovalPolicy;
   readonly logRetentionDays: logs.RetentionDays;
@@ -26,6 +29,7 @@ export const envConfigs: Record<string, EnvConfig> = {
     ecsMinCapacity: 1,
     ecsMaxCapacity: 2,
     cpuTargetUtilization: 60,
+    enableAlarms: true,
     removalPolicy: cdk.RemovalPolicy.DESTROY,
     logRetentionDays: logs.RetentionDays.ONE_WEEK,
   },
@@ -37,6 +41,7 @@ export const envConfigs: Record<string, EnvConfig> = {
     ecsMinCapacity: 1,
     ecsMaxCapacity: 2,
     cpuTargetUtilization: 60,
+    enableAlarms: true,
     removalPolicy: cdk.RemovalPolicy.RETAIN,
     logRetentionDays: logs.RetentionDays.ONE_WEEK,
   },
@@ -48,6 +53,7 @@ export const envConfigs: Record<string, EnvConfig> = {
     ecsMinCapacity: 1,
     ecsMaxCapacity: 2,
     cpuTargetUtilization: 60,
+    enableAlarms: true,
     removalPolicy: cdk.RemovalPolicy.RETAIN,
     logRetentionDays: logs.RetentionDays.ONE_WEEK,
   },

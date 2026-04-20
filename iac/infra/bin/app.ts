@@ -44,12 +44,14 @@ const edge = new EdgeStack(app, `${prefix}-Edge`, {
 const ops = new OpsStack(app, `${prefix}-Ops`, {
   env, config, prefix,
   httpApiId: edge.httpApiId,
+  docdbClusterIdentifier: data.dbClusterIdentifier,
 });
 
 data.addDependency(network);
 cluster.addDependency(network);
 edge.addDependency(network);
 ops.addDependency(edge);
+ops.addDependency(data);
 
 // --- Outputs Stack: writes infra values to SSM for service app ---
 const outputs = new OutputsStack(app, `${prefix}-Outputs`, {

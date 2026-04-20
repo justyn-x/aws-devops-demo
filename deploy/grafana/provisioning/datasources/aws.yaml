@@ -1,0 +1,21 @@
+apiVersion: 1
+
+datasources:
+  - name: CloudWatch
+    type: cloudwatch
+    access: proxy
+    uid: cloudwatch
+    isDefault: true
+    jsonData:
+      authType: default
+      defaultRegion: ${REGION}
+    editable: true
+
+  - name: X-Ray
+    type: grafana-x-ray-datasource
+    access: proxy
+    uid: xray
+    jsonData:
+      authType: default
+      defaultRegion: ${REGION}
+    editable: true
