@@ -8,7 +8,8 @@ COPY deploy/grafana/provisioning/datasources/ /etc/grafana/provisioning/datasour
 COPY deploy/grafana/provisioning/dashboards/ /etc/grafana/provisioning/dashboards/
 COPY deploy/grafana/dashboards/ /var/lib/grafana/dashboards/
 COPY deploy/grafana/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN chmod +x /entrypoint.sh && \
+    chown -R grafana:root /var/lib/grafana/dashboards/ /etc/grafana/provisioning/
 
 USER grafana
 ENTRYPOINT ["/entrypoint.sh"]

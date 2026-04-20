@@ -1,7 +1,7 @@
 {
   "uid": "service-overview",
   "title": "Service Overview",
-  "tags": ["${PREFIX}", "service"],
+  "tags": ["service"],
   "timezone": "browser",
   "templating": {
     "list": [
@@ -14,15 +14,6 @@
           { "text": "user-service", "value": "user-service", "selected": false }
         ],
         "query": "todo-service,user-service"
-      },
-      {
-        "name": "region",
-        "type": "custom",
-        "current": { "text": "us-east-1", "value": "us-east-1" },
-        "options": [
-          { "text": "us-east-1", "value": "us-east-1", "selected": true }
-        ],
-        "query": "us-east-1"
       }
     ]
   },
@@ -39,23 +30,24 @@
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
       "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
       "targets": [{
+        "refId": "A",
+        "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
         "namespace": "AWS/ECS",
         "metricName": "CPUUtilization",
-        "dimensions": { "ClusterName": ["${PREFIX}-cluster"], "ServiceName": ["${PREFIX}-${service}"] },
+        "dimensions": { "ClusterName": ["${PREFIX}"], "ServiceName": ["${PREFIX}-${service}"] },
         "statistic": "Average",
-        "period": "60",
-        "region": "$region"
+        "period": "300",
+        "region": "${REGION}",
+        "id": "",
+        "expression": "",
+        "matchExact": true
       }],
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
-          "thresholds": {
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 60 },
-              { "color": "red", "value": 80 }
-            ]
-          },
+          "min": 0,
+          "max": 100,
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 60 }, { "color": "red", "value": 80 }] },
           "custom": { "fillOpacity": 10, "lineWidth": 2 }
         }
       }
@@ -66,23 +58,24 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
       "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
       "targets": [{
+        "refId": "A",
+        "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
         "namespace": "AWS/ECS",
         "metricName": "MemoryUtilization",
-        "dimensions": { "ClusterName": ["${PREFIX}-cluster"], "ServiceName": ["${PREFIX}-${service}"] },
+        "dimensions": { "ClusterName": ["${PREFIX}"], "ServiceName": ["${PREFIX}-${service}"] },
         "statistic": "Average",
-        "period": "60",
-        "region": "$region"
+        "period": "300",
+        "region": "${REGION}",
+        "id": "",
+        "expression": "",
+        "matchExact": true
       }],
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
-          "thresholds": {
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 60 },
-              { "color": "red", "value": 80 }
-            ]
-          },
+          "min": 0,
+          "max": 100,
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 60 }, { "color": "red", "value": 80 }] },
           "custom": { "fillOpacity": 10, "lineWidth": 2 }
         }
       }
@@ -90,52 +83,26 @@
     {
       "title": "Running Tasks",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 1 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
       "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
       "targets": [{
+        "refId": "A",
+        "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
         "namespace": "ECS/ContainerInsights",
         "metricName": "RunningTaskCount",
-        "dimensions": { "ClusterName": ["${PREFIX}-cluster"], "ServiceName": ["${PREFIX}-${service}"] },
+        "dimensions": { "ClusterName": ["${PREFIX}"], "ServiceName": ["${PREFIX}-${service}"] },
         "statistic": "Average",
         "period": "60",
-        "region": "$region"
+        "region": "${REGION}",
+        "id": "",
+        "expression": "",
+        "matchExact": true
       }],
       "fieldConfig": {
         "defaults": {
-          "thresholds": {
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "green", "value": 1 }
-            ]
-          }
+          "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
         }
       }
-    },
-    {
-      "title": "ALB Healthy / Unhealthy",
-      "type": "stat",
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 5 },
-      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-      "targets": [
-        {
-          "namespace": "AWS/ApplicationELB",
-          "metricName": "HealthyHostCount",
-          "statistic": "Average",
-          "period": "60",
-          "region": "$region",
-          "refId": "healthy",
-          "label": "Healthy"
-        },
-        {
-          "namespace": "AWS/ApplicationELB",
-          "metricName": "UnHealthyHostCount",
-          "statistic": "Average",
-          "period": "60",
-          "region": "$region",
-          "refId": "unhealthy",
-          "label": "Unhealthy"
-        }
-      ]
     },
     {
       "title": "Application Metrics",
@@ -144,33 +111,42 @@
       "collapsed": false
     },
     {
-      "title": "HTTP Request Duration",
+      "title": "HTTP Request Duration (avg / p99)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
       "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-      "targets": [{
-        "namespace": "AppMetrics/${service}",
-        "metricName": "http.server.request.duration",
-        "dimensions": { "OTelLib": ["go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"] },
-        "statistic": "Average",
-        "period": "60",
-        "region": "$region",
-        "label": "avg"
-      },
-      {
-        "namespace": "AppMetrics/${service}",
-        "metricName": "http.server.request.duration",
-        "dimensions": { "OTelLib": ["go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"] },
-        "statistic": "p99",
-        "period": "60",
-        "region": "$region",
-        "label": "p99"
-      }],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "custom": { "fillOpacity": 10, "lineWidth": 2 }
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+          "namespace": "AppMetrics/${service}",
+          "metricName": "http.server.request.duration",
+          "dimensions": { "OTelLib": ["go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"] },
+          "statistic": "Average",
+          "period": "300",
+          "region": "${REGION}",
+          "id": "",
+          "expression": "",
+          "matchExact": false,
+          "label": "avg"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+          "namespace": "AppMetrics/${service}",
+          "metricName": "http.server.request.duration",
+          "dimensions": { "OTelLib": ["go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"] },
+          "statistic": "p99",
+          "period": "300",
+          "region": "${REGION}",
+          "id": "",
+          "expression": "",
+          "matchExact": false,
+          "label": "p99"
         }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "fillOpacity": 10, "lineWidth": 2 } }
       }
     },
     {
@@ -180,27 +156,36 @@
       "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
       "targets": [
         {
-          "namespace": "AWS/ApplicationELB",
-          "metricName": "HTTPCode_Target_4XX_Count",
-          "statistic": "Sum",
-          "period": "60",
-          "region": "$region",
-          "label": "4xx"
-        },
-        {
+          "refId": "A",
+          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
           "namespace": "AWS/ApplicationELB",
           "metricName": "HTTPCode_Target_5XX_Count",
+          "dimensions": {},
           "statistic": "Sum",
-          "period": "60",
-          "region": "$region",
+          "period": "300",
+          "region": "${REGION}",
+          "id": "",
+          "expression": "",
+          "matchExact": false,
           "label": "5xx"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HTTPCode_Target_4XX_Count",
+          "dimensions": {},
+          "statistic": "Sum",
+          "period": "300",
+          "region": "${REGION}",
+          "id": "",
+          "expression": "",
+          "matchExact": false,
+          "label": "4xx"
         }
       ],
       "fieldConfig": {
-        "defaults": {
-          "custom": { "fillOpacity": 10, "lineWidth": 2 },
-          "color": { "mode": "palette-classic" }
-        },
+        "defaults": { "custom": { "fillOpacity": 10, "lineWidth": 2 } },
         "overrides": [
           { "matcher": { "id": "byName", "options": "5xx" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
           { "matcher": { "id": "byName", "options": "4xx" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] }
@@ -208,38 +193,23 @@
       }
     },
     {
-      "title": "Traces (X-Ray)",
+      "title": "Logs",
       "type": "row",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
       "collapsed": false
     },
     {
-      "title": "Recent Traces",
-      "type": "table",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 19 },
-      "datasource": { "type": "grafana-x-ray-datasource" },
-      "targets": [{
-        "queryType": "getTraceSummaries",
-        "query": "service(id(name: \"${service}\"))",
-        "region": "$region"
-      }]
-    },
-    {
-      "title": "Logs",
-      "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 },
-      "collapsed": false
-    },
-    {
       "title": "Application Logs",
       "type": "logs",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 28 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 19 },
       "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
       "targets": [{
+        "refId": "A",
+        "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
         "queryMode": "Logs",
-        "logGroupNames": ["/ecs/${PREFIX}/${service}"],
+        "logGroups": [{ "arn": "", "name": "/ecs/${PREFIX}/${service}" }],
         "expression": "fields @timestamp, level, msg, trace_id, caller\n| filter @message not like /healthz/\n| sort @timestamp desc\n| limit 50",
-        "region": "$region"
+        "region": "${REGION}"
       }]
     }
   ],
