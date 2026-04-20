@@ -1,274 +1,502 @@
 {
-  "uid": "service-overview",
-  "title": "Service Overview",
-  "tags": ["service"],
-  "timezone": "browser",
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "title": "ECS Health",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 2
+          },
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "expression": "",
+          "id": "",
+          "matchExact": true,
+          "metricEditorMode": 1,
+          "metricQueryType": 1,
+          "namespace": "AWS/ECS",
+          "period": "300",
+          "queryMode": "Metrics",
+          "refId": "A",
+          "region": "${REGION}",
+          "sqlExpression": "SELECT AVG(CPUUtilization) FROM SCHEMA(\"AWS/ECS\", ClusterName, ServiceName) WHERE ClusterName = '${prefix}' AND ServiceName = '${prefix}-${service}'",
+          "statistic": "Average"
+        }
+      ],
+      "title": "CPU Utilization (%)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 2
+          },
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "expression": "",
+          "id": "",
+          "matchExact": true,
+          "metricEditorMode": 1,
+          "metricQueryType": 1,
+          "namespace": "AWS/ECS",
+          "period": "300",
+          "queryMode": "Metrics",
+          "refId": "A",
+          "region": "${REGION}",
+          "sqlExpression": "SELECT AVG(MemoryUtilization) FROM SCHEMA(\"AWS/ECS\", ClusterName, ServiceName) WHERE ClusterName = '${prefix}' AND ServiceName = '${prefix}-${service}'",
+          "statistic": "Average"
+        }
+      ],
+      "title": "Memory Utilization (%)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "expression": "",
+          "id": "",
+          "matchExact": true,
+          "metricEditorMode": 1,
+          "metricQueryType": 1,
+          "namespace": "ECS/ContainerInsights",
+          "period": "300",
+          "queryMode": "Metrics",
+          "refId": "A",
+          "region": "${REGION}",
+          "sqlExpression": "SELECT AVG(RunningTaskCount) FROM SCHEMA(\"ECS/ContainerInsights\", ClusterName, ServiceName) WHERE ClusterName = '${prefix}' AND ServiceName = '${prefix}-${service}'",
+          "statistic": "Average"
+        }
+      ],
+      "title": "Running Tasks",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "title": "Application Metrics",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 2
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "dimensions": {
+            "OTelLib": [
+              "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+            ]
+          },
+          "expression": "",
+          "id": "",
+          "label": "avg",
+          "matchExact": true,
+          "metricEditorMode": 0,
+          "metricName": "http.server.request.duration",
+          "metricQueryType": 0,
+          "namespace": "AppMetrics/${service}",
+          "period": "300",
+          "queryMode": "Metrics",
+          "refId": "A",
+          "region": "${REGION}",
+          "sqlExpression": "",
+          "statistic": "Average"
+        },
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "dimensions": {
+            "OTelLib": [
+              "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+            ]
+          },
+          "expression": "",
+          "id": "",
+          "label": "p99",
+          "matchExact": true,
+          "metricEditorMode": 0,
+          "metricName": "http.server.request.duration",
+          "metricQueryType": 0,
+          "namespace": "AppMetrics/${service}",
+          "period": "300",
+          "queryMode": "Metrics",
+          "refId": "B",
+          "region": "${REGION}",
+          "sqlExpression": "",
+          "statistic": "p99"
+        }
+      ],
+      "title": "HTTP Request Duration (avg / p99)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 2
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "5xx"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "4xx"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "dimensions": {},
+          "expression": "",
+          "id": "",
+          "label": "5xx",
+          "matchExact": false,
+          "metricEditorMode": 0,
+          "metricName": "HTTPCode_Target_5XX_Count",
+          "metricQueryType": 0,
+          "namespace": "AWS/ApplicationELB",
+          "period": "300",
+          "queryMode": "Metrics",
+          "refId": "A",
+          "region": "${REGION}",
+          "sqlExpression": "",
+          "statistic": "Sum"
+        },
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "dimensions": {},
+          "expression": "",
+          "id": "",
+          "label": "4xx",
+          "matchExact": false,
+          "metricEditorMode": 0,
+          "metricName": "HTTPCode_Target_4XX_Count",
+          "metricQueryType": 0,
+          "namespace": "AWS/ApplicationELB",
+          "period": "300",
+          "queryMode": "Metrics",
+          "refId": "B",
+          "region": "${REGION}",
+          "sqlExpression": "",
+          "statistic": "Sum"
+        }
+      ],
+      "title": "ALB Error Rates",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "title": "Traces (X-Ray)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-x-ray-datasource",
+        "uid": "xray"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-x-ray-datasource",
+            "uid": "xray"
+          },
+          "query": "service(\"$service\") AND NOT http.url CONTAINS \"healthz\"",
+          "queryType": "getTraceSummaries",
+          "refId": "A",
+          "region": "${REGION}"
+        }
+      ],
+      "title": "Recent Traces",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      },
+      "title": "Logs",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "expression": "fields @timestamp, level, msg, trace_id, caller\n| filter @message not like /healthz/\n| sort @timestamp desc\n| limit 50",
+          "logGroups": [
+            {
+              "accountId": "482155437574",
+              "arn": "arn:aws:logs:${REGION}:482155437574:log-group:/ecs/$prefix/$service",
+              "name": "/ecs/$prefix/$service"
+            }
+          ],
+          "queryMode": "Logs",
+          "refId": "A",
+          "region": "${REGION}"
+        }
+      ],
+      "title": "Application Logs",
+      "type": "logs"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "service"
+  ],
   "templating": {
     "list": [
       {
         "name": "prefix",
         "type": "constant",
         "query": "${PREFIX}",
-        "current": { "text": "${PREFIX}", "value": "${PREFIX}" },
+        "current": {
+          "text": "${PREFIX}",
+          "value": "${PREFIX}"
+        },
         "hide": 2
       },
       {
         "name": "service",
-        "type": "query",
-        "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-        "query": "dimension_values(${REGION},AWS/ECS,CPUUtilization,ServiceName)",
-        "regex": "/^$prefix-(.+-service)$/",
-        "refresh": 1,
-        "sort": 1,
-        "current": {},
-        "includeAll": false
+        "type": "custom",
+        "query": "todo-service,user-service",
+        "current": {
+          "text": "todo-service",
+          "value": "todo-service",
+          "selected": true
+        },
+        "options": [
+          {
+            "text": "todo-service",
+            "value": "todo-service",
+            "selected": true
+          },
+          {
+            "text": "user-service",
+            "value": "user-service",
+            "selected": false
+          }
+        ],
+        "includeAll": false,
+        "hide": 0
       }
     ]
   },
-  "panels": [
-    {
-      "title": "ECS Health",
-      "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
-      "collapsed": false
-    },
-    {
-      "title": "CPU Utilization (%)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
-      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-      "targets": [{
-        "refId": "A",
-        "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-        "queryMode": "Metrics",
-        "metricQueryType": 0,
-        "metricEditorMode": 0,
-        "namespace": "AWS/ECS",
-        "metricName": "CPUUtilization",
-        "dimensions": { "ClusterName": ["$prefix"], "ServiceName": ["$prefix-$service"] },
-        "statistic": "Average",
-        "period": "300",
-        "region": "${REGION}",
-        "id": "",
-        "expression": "",
-        "sqlExpression": "",
-        "matchExact": true
-      }],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 100,
-          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 60 }, { "color": "red", "value": 80 }] },
-          "custom": { "fillOpacity": 10, "lineWidth": 2 }
-        }
-      }
-    },
-    {
-      "title": "Memory Utilization (%)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
-      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-      "targets": [{
-        "refId": "A",
-        "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-        "queryMode": "Metrics",
-        "metricQueryType": 0,
-        "metricEditorMode": 0,
-        "namespace": "AWS/ECS",
-        "metricName": "MemoryUtilization",
-        "dimensions": { "ClusterName": ["$prefix"], "ServiceName": ["$prefix-$service"] },
-        "statistic": "Average",
-        "period": "300",
-        "region": "${REGION}",
-        "id": "",
-        "expression": "",
-        "sqlExpression": "",
-        "matchExact": true
-      }],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 100,
-          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 60 }, { "color": "red", "value": 80 }] },
-          "custom": { "fillOpacity": 10, "lineWidth": 2 }
-        }
-      }
-    },
-    {
-      "title": "Running Tasks",
-      "type": "stat",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
-      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-      "targets": [{
-        "refId": "A",
-        "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-        "queryMode": "Metrics",
-        "metricQueryType": 0,
-        "metricEditorMode": 0,
-        "namespace": "ECS/ContainerInsights",
-        "metricName": "RunningTaskCount",
-        "dimensions": { "ClusterName": ["$prefix"], "ServiceName": ["$prefix-$service"] },
-        "statistic": "Average",
-        "period": "60",
-        "region": "${REGION}",
-        "id": "",
-        "expression": "",
-        "sqlExpression": "",
-        "matchExact": true
-      }],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
-        }
-      }
-    },
-    {
-      "title": "Application Metrics",
-      "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
-      "collapsed": false
-    },
-    {
-      "title": "HTTP Request Duration (avg / p99)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
-      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-          "queryMode": "Metrics",
-          "metricQueryType": 0,
-          "metricEditorMode": 0,
-          "namespace": "AppMetrics/$service",
-          "metricName": "http.server.request.duration",
-          "dimensions": { "OTelLib": ["go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"] },
-          "statistic": "Average",
-          "period": "300",
-          "region": "${REGION}",
-          "id": "",
-          "expression": "",
-          "sqlExpression": "",
-          "matchExact": true,
-          "label": "avg"
-        },
-        {
-          "refId": "B",
-          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-          "queryMode": "Metrics",
-          "metricQueryType": 0,
-          "metricEditorMode": 0,
-          "namespace": "AppMetrics/$service",
-          "metricName": "http.server.request.duration",
-          "dimensions": { "OTelLib": ["go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"] },
-          "statistic": "p99",
-          "period": "300",
-          "region": "${REGION}",
-          "id": "",
-          "expression": "",
-          "sqlExpression": "",
-          "matchExact": true,
-          "label": "p99"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": { "unit": "s", "custom": { "fillOpacity": 10, "lineWidth": 2 } }
-      }
-    },
-    {
-      "title": "ALB Error Rates",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
-      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-          "queryMode": "Metrics",
-          "metricQueryType": 0,
-          "metricEditorMode": 0,
-          "namespace": "AWS/ApplicationELB",
-          "metricName": "HTTPCode_Target_5XX_Count",
-          "dimensions": {},
-          "statistic": "Sum",
-          "period": "300",
-          "region": "${REGION}",
-          "id": "",
-          "expression": "",
-          "sqlExpression": "",
-          "matchExact": false,
-          "label": "5xx"
-        },
-        {
-          "refId": "B",
-          "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-          "queryMode": "Metrics",
-          "metricQueryType": 0,
-          "metricEditorMode": 0,
-          "namespace": "AWS/ApplicationELB",
-          "metricName": "HTTPCode_Target_4XX_Count",
-          "dimensions": {},
-          "statistic": "Sum",
-          "period": "300",
-          "region": "${REGION}",
-          "id": "",
-          "expression": "",
-          "sqlExpression": "",
-          "matchExact": false,
-          "label": "4xx"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": { "custom": { "fillOpacity": 10, "lineWidth": 2 } },
-        "overrides": [
-          { "matcher": { "id": "byName", "options": "5xx" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
-          { "matcher": { "id": "byName", "options": "4xx" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] }
-        ]
-      }
-    },
-    {
-      "title": "Traces (X-Ray)",
-      "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
-      "collapsed": false
-    },
-    {
-      "title": "Recent Traces",
-      "type": "table",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 19 },
-      "datasource": { "type": "grafana-x-ray-datasource", "uid": "xray" },
-      "targets": [{
-        "refId": "A",
-        "datasource": { "type": "grafana-x-ray-datasource", "uid": "xray" },
-        "queryType": "getTraceSummaries",
-        "query": "service(\"$service\") AND NOT http.url CONTAINS \"healthz\"",
-        "region": "${REGION}"
-      }]
-    },
-    {
-      "title": "Logs",
-      "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
-      "collapsed": false
-    },
-    {
-      "title": "Application Logs",
-      "type": "logs",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 30 },
-      "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-      "targets": [{
-        "refId": "A",
-        "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
-        "queryMode": "Logs",
-        "logGroups": [{ "name": "/ecs/$prefix/$service" }],
-        "expression": "fields @timestamp, level, msg, trace_id, caller\n| filter @message not like /healthz/\n| sort @timestamp desc\n| limit 50",
-        "region": "${REGION}"
-      }]
-    }
-  ],
-  "time": { "from": "now-1h", "to": "now" },
-  "refresh": "30s",
-  "schemaVersion": 39
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Service Overview",
+  "uid": "service-overview"
 }
