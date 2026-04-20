@@ -18,6 +18,9 @@
       "targets": [{
         "refId": "A",
         "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+        "queryMode": "Metrics",
+        "metricQueryType": 0,
+        "metricEditorMode": 0,
         "namespace": "AWS/ApiGateway",
         "metricName": "Count",
         "dimensions": {},
@@ -26,6 +29,7 @@
         "region": "${REGION}",
         "id": "",
         "expression": "",
+        "sqlExpression": "",
         "matchExact": false,
         "label": "Requests"
       }],
@@ -42,6 +46,9 @@
         {
           "refId": "A",
           "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
           "namespace": "AWS/ApiGateway",
           "metricName": "4xx",
           "dimensions": {},
@@ -50,12 +57,16 @@
           "region": "${REGION}",
           "id": "",
           "expression": "",
+          "sqlExpression": "",
           "matchExact": false,
           "label": "4xx"
         },
         {
           "refId": "B",
           "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
           "namespace": "AWS/ApiGateway",
           "metricName": "5xx",
           "dimensions": {},
@@ -64,6 +75,7 @@
           "region": "${REGION}",
           "id": "",
           "expression": "",
+          "sqlExpression": "",
           "matchExact": false,
           "label": "5xx"
         }
@@ -84,6 +96,9 @@
       "targets": [{
         "refId": "A",
         "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+        "queryMode": "Metrics",
+        "metricQueryType": 0,
+        "metricEditorMode": 0,
         "namespace": "AWS/ApiGateway",
         "metricName": "Latency",
         "dimensions": {},
@@ -92,6 +107,7 @@
         "region": "${REGION}",
         "id": "",
         "expression": "",
+        "sqlExpression": "",
         "matchExact": false,
         "label": "p99"
       }],
@@ -113,6 +129,9 @@
       "targets": [{
         "refId": "A",
         "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+        "queryMode": "Metrics",
+        "metricQueryType": 0,
+        "metricEditorMode": 0,
         "namespace": "AWS/DocDB",
         "metricName": "CPUUtilization",
         "dimensions": { "DBClusterIdentifier": ["${PREFIX}-docdb"] },
@@ -121,6 +140,7 @@
         "region": "${REGION}",
         "id": "",
         "expression": "",
+        "sqlExpression": "",
         "matchExact": true
       }],
       "fieldConfig": {
@@ -137,6 +157,9 @@
       "targets": [{
         "refId": "A",
         "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+        "queryMode": "Metrics",
+        "metricQueryType": 0,
+        "metricEditorMode": 0,
         "namespace": "AWS/DocDB",
         "metricName": "FreeableMemory",
         "dimensions": { "DBClusterIdentifier": ["${PREFIX}-docdb"] },
@@ -145,6 +168,7 @@
         "region": "${REGION}",
         "id": "",
         "expression": "",
+        "sqlExpression": "",
         "matchExact": true
       }],
       "fieldConfig": {
@@ -159,6 +183,9 @@
       "targets": [{
         "refId": "A",
         "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+        "queryMode": "Metrics",
+        "metricQueryType": 0,
+        "metricEditorMode": 0,
         "namespace": "AWS/DocDB",
         "metricName": "DatabaseConnections",
         "dimensions": { "DBClusterIdentifier": ["${PREFIX}-docdb"] },
@@ -167,6 +194,7 @@
         "region": "${REGION}",
         "id": "",
         "expression": "",
+        "sqlExpression": "",
         "matchExact": true
       }],
       "fieldConfig": {
@@ -182,6 +210,9 @@
         {
           "refId": "A",
           "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
           "namespace": "AWS/DocDB",
           "metricName": "ReadLatency",
           "dimensions": { "DBClusterIdentifier": ["${PREFIX}-docdb"] },
@@ -190,12 +221,16 @@
           "region": "${REGION}",
           "id": "",
           "expression": "",
+          "sqlExpression": "",
           "matchExact": true,
           "label": "Read"
         },
         {
           "refId": "B",
           "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
           "namespace": "AWS/DocDB",
           "metricName": "WriteLatency",
           "dimensions": { "DBClusterIdentifier": ["${PREFIX}-docdb"] },
@@ -204,6 +239,7 @@
           "region": "${REGION}",
           "id": "",
           "expression": "",
+          "sqlExpression": "",
           "matchExact": true,
           "label": "Write"
         }

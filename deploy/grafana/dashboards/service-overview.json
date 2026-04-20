@@ -32,6 +32,9 @@
       "targets": [{
         "refId": "A",
         "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+        "queryMode": "Metrics",
+        "metricQueryType": 0,
+        "metricEditorMode": 0,
         "namespace": "AWS/ECS",
         "metricName": "CPUUtilization",
         "dimensions": { "ClusterName": ["${PREFIX}"], "ServiceName": ["${PREFIX}-${service}"] },
@@ -40,6 +43,7 @@
         "region": "${REGION}",
         "id": "",
         "expression": "",
+        "sqlExpression": "",
         "matchExact": true
       }],
       "fieldConfig": {
@@ -60,6 +64,9 @@
       "targets": [{
         "refId": "A",
         "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+        "queryMode": "Metrics",
+        "metricQueryType": 0,
+        "metricEditorMode": 0,
         "namespace": "AWS/ECS",
         "metricName": "MemoryUtilization",
         "dimensions": { "ClusterName": ["${PREFIX}"], "ServiceName": ["${PREFIX}-${service}"] },
@@ -68,6 +75,7 @@
         "region": "${REGION}",
         "id": "",
         "expression": "",
+        "sqlExpression": "",
         "matchExact": true
       }],
       "fieldConfig": {
@@ -88,6 +96,9 @@
       "targets": [{
         "refId": "A",
         "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+        "queryMode": "Metrics",
+        "metricQueryType": 0,
+        "metricEditorMode": 0,
         "namespace": "ECS/ContainerInsights",
         "metricName": "RunningTaskCount",
         "dimensions": { "ClusterName": ["${PREFIX}"], "ServiceName": ["${PREFIX}-${service}"] },
@@ -96,6 +107,7 @@
         "region": "${REGION}",
         "id": "",
         "expression": "",
+        "sqlExpression": "",
         "matchExact": true
       }],
       "fieldConfig": {
@@ -119,6 +131,9 @@
         {
           "refId": "A",
           "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
           "namespace": "AppMetrics/${service}",
           "metricName": "http.server.request.duration",
           "dimensions": { "OTelLib": ["go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"] },
@@ -127,12 +142,16 @@
           "region": "${REGION}",
           "id": "",
           "expression": "",
+          "sqlExpression": "",
           "matchExact": false,
           "label": "avg"
         },
         {
           "refId": "B",
           "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
           "namespace": "AppMetrics/${service}",
           "metricName": "http.server.request.duration",
           "dimensions": { "OTelLib": ["go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"] },
@@ -141,6 +160,7 @@
           "region": "${REGION}",
           "id": "",
           "expression": "",
+          "sqlExpression": "",
           "matchExact": false,
           "label": "p99"
         }
@@ -158,6 +178,9 @@
         {
           "refId": "A",
           "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
           "namespace": "AWS/ApplicationELB",
           "metricName": "HTTPCode_Target_5XX_Count",
           "dimensions": {},
@@ -166,12 +189,16 @@
           "region": "${REGION}",
           "id": "",
           "expression": "",
+          "sqlExpression": "",
           "matchExact": false,
           "label": "5xx"
         },
         {
           "refId": "B",
           "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
           "namespace": "AWS/ApplicationELB",
           "metricName": "HTTPCode_Target_4XX_Count",
           "dimensions": {},
@@ -180,6 +207,7 @@
           "region": "${REGION}",
           "id": "",
           "expression": "",
+          "sqlExpression": "",
           "matchExact": false,
           "label": "4xx"
         }
