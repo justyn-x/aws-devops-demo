@@ -30,7 +30,7 @@
         "id": "",
         "expression": "",
         "sqlExpression": "",
-        "matchExact": false,
+        "matchExact": true,
         "label": "Requests"
       }],
       "fieldConfig": {
@@ -58,7 +58,7 @@
           "id": "",
           "expression": "",
           "sqlExpression": "",
-          "matchExact": false,
+          "matchExact": true,
           "label": "4xx"
         },
         {
@@ -76,7 +76,7 @@
           "id": "",
           "expression": "",
           "sqlExpression": "",
-          "matchExact": false,
+          "matchExact": true,
           "label": "5xx"
         }
       ],
@@ -108,7 +108,7 @@
         "id": "",
         "expression": "",
         "sqlExpression": "",
-        "matchExact": false,
+        "matchExact": true,
         "label": "p99"
       }],
       "fieldConfig": {

@@ -6,14 +6,22 @@
   "templating": {
     "list": [
       {
+        "name": "prefix",
+        "type": "constant",
+        "query": "${PREFIX}",
+        "current": { "text": "${PREFIX}", "value": "${PREFIX}" },
+        "hide": 2
+      },
+      {
         "name": "service",
-        "type": "custom",
-        "current": { "text": "todo-service", "value": "todo-service" },
-        "options": [
-          { "text": "todo-service", "value": "todo-service", "selected": true },
-          { "text": "user-service", "value": "user-service", "selected": false }
-        ],
-        "query": "todo-service,user-service"
+        "type": "query",
+        "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
+        "query": "dimension_values(${REGION},AWS/ECS,CPUUtilization,ServiceName,{ClusterName=$prefix})",
+        "regex": "/$prefix-(.+)/",
+        "refresh": 1,
+        "sort": 1,
+        "current": {},
+        "includeAll": false
       }
     ]
   },
@@ -37,7 +45,7 @@
         "metricEditorMode": 0,
         "namespace": "AWS/ECS",
         "metricName": "CPUUtilization",
-        "dimensions": { "ClusterName": ["${PREFIX}"], "ServiceName": ["${PREFIX}-${service}"] },
+        "dimensions": { "ClusterName": ["$prefix"], "ServiceName": ["$prefix-$service"] },
         "statistic": "Average",
         "period": "300",
         "region": "${REGION}",
@@ -69,7 +77,7 @@
         "metricEditorMode": 0,
         "namespace": "AWS/ECS",
         "metricName": "MemoryUtilization",
-        "dimensions": { "ClusterName": ["${PREFIX}"], "ServiceName": ["${PREFIX}-${service}"] },
+        "dimensions": { "ClusterName": ["$prefix"], "ServiceName": ["$prefix-$service"] },
         "statistic": "Average",
         "period": "300",
         "region": "${REGION}",
@@ -101,7 +109,7 @@
         "metricEditorMode": 0,
         "namespace": "ECS/ContainerInsights",
         "metricName": "RunningTaskCount",
-        "dimensions": { "ClusterName": ["${PREFIX}"], "ServiceName": ["${PREFIX}-${service}"] },
+        "dimensions": { "ClusterName": ["$prefix"], "ServiceName": ["$prefix-$service"] },
         "statistic": "Average",
         "period": "60",
         "region": "${REGION}",
@@ -134,7 +142,7 @@
           "queryMode": "Metrics",
           "metricQueryType": 0,
           "metricEditorMode": 0,
-          "namespace": "AppMetrics/${service}",
+          "namespace": "AppMetrics/$service",
           "metricName": "http.server.request.duration",
           "dimensions": { "OTelLib": ["go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"] },
           "statistic": "Average",
@@ -152,7 +160,7 @@
           "queryMode": "Metrics",
           "metricQueryType": 0,
           "metricEditorMode": 0,
-          "namespace": "AppMetrics/${service}",
+          "namespace": "AppMetrics/$service",
           "metricName": "http.server.request.duration",
           "dimensions": { "OTelLib": ["go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"] },
           "statistic": "p99",
@@ -190,7 +198,7 @@
           "id": "",
           "expression": "",
           "sqlExpression": "",
-          "matchExact": false,
+          "matchExact": true,
           "label": "5xx"
         },
         {
@@ -208,7 +216,7 @@
           "id": "",
           "expression": "",
           "sqlExpression": "",
-          "matchExact": false,
+          "matchExact": true,
           "label": "4xx"
         }
       ],
@@ -221,21 +229,40 @@
       }
     },
     {
-      "title": "Logs",
+      "title": "Traces (X-Ray)",
       "type": "row",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
       "collapsed": false
     },
     {
+      "title": "Recent Traces",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 19 },
+      "datasource": { "type": "grafana-x-ray-datasource", "uid": "xray" },
+      "targets": [{
+        "refId": "A",
+        "datasource": { "type": "grafana-x-ray-datasource", "uid": "xray" },
+        "queryType": "getTraceSummaries",
+        "query": "service(\"$prefix-$service\")",
+        "region": "${REGION}"
+      }]
+    },
+    {
+      "title": "Logs",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
+      "collapsed": false
+    },
+    {
       "title": "Application Logs",
       "type": "logs",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 19 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 30 },
       "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
       "targets": [{
         "refId": "A",
         "datasource": { "type": "cloudwatch", "uid": "cloudwatch" },
         "queryMode": "Logs",
-        "logGroups": [{ "arn": "", "name": "/ecs/${PREFIX}/${service}" }],
+        "logGroups": [{ "arn": "", "name": "/ecs/$prefix/$service" }],
         "expression": "fields @timestamp, level, msg, trace_id, caller\n| filter @message not like /healthz/\n| sort @timestamp desc\n| limit 50",
         "region": "${REGION}"
       }]
