@@ -6,7 +6,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   # ── 解析 tag ─────────────────────────────────────────────
@@ -30,7 +29,8 @@ jobs:
   # ── Docker Build & Push ──────────────────────────────────
   build-push:
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on:
+      - codebuild-aws-devops-demo-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v6
       - uses: aws-actions/configure-aws-credentials@v6
@@ -58,7 +58,8 @@ jobs:
   # ── Staging ──────────────────────────────────────────────
   staging-diff:
     needs: [prepare, build-push]
-    runs-on: ubuntu-latest
+    runs-on:
+      - codebuild-aws-devops-demo-${{ github.run_id }}-${{ github.run_attempt }}
     outputs:
       has_diff: ${{ steps.diff.outputs.has_diff }}
     steps:
@@ -114,7 +115,8 @@ jobs:
   staging-deploy:
     needs: [prepare, staging-diff]
     if: needs.staging-diff.outputs.has_diff == 'true'
-    runs-on: ubuntu-latest
+    runs-on:
+      - codebuild-aws-devops-demo-${{ github.run_id }}-${{ github.run_attempt }}
     environment: staging
     steps:
       - uses: actions/checkout@v6
@@ -159,7 +161,8 @@ jobs:
   prod-diff:
     needs: [prepare, staging-diff, staging-deploy]
     if: always() && (needs.staging-deploy.result == 'success' || needs.staging-diff.outputs.has_diff == 'false')
-    runs-on: ubuntu-latest
+    runs-on:
+      - codebuild-aws-devops-demo-${{ github.run_id }}-${{ github.run_attempt }}
     outputs:
       has_diff: ${{ steps.diff.outputs.has_diff }}
     steps:
@@ -215,7 +218,8 @@ jobs:
   prod-deploy:
     needs: [prepare, prod-diff]
     if: needs.prod-diff.outputs.has_diff == 'true'
-    runs-on: ubuntu-latest
+    runs-on:
+      - codebuild-aws-devops-demo-${{ github.run_id }}-${{ github.run_attempt }}
     environment: production
     steps:
       - uses: actions/checkout@v6
