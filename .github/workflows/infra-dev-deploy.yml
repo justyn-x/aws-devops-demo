@@ -6,14 +6,14 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: deploy-infra-dev
 
 jobs:
   diff:
-    runs-on: ubuntu-latest
+    runs-on:
+      - codebuild-aws-devops-demo-${{ github.run_id }}-${{ github.run_attempt }}
     outputs:
       has_diff: ${{ steps.diff.outputs.has_diff }}
     steps:
@@ -67,7 +67,8 @@ jobs:
   deploy:
     needs: diff
     if: needs.diff.outputs.has_diff == 'true'
-    runs-on: ubuntu-latest
+    runs-on:
+      - codebuild-aws-devops-demo-${{ github.run_id }}-${{ github.run_attempt }}
     environment: dev
     steps:
       - uses: actions/checkout@v6

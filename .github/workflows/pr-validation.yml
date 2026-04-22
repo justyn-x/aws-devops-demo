@@ -7,7 +7,6 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  id-token: write
 
 jobs:
   # ── Go 测试 ──────────────────────────────────────────────
@@ -48,7 +47,8 @@ jobs:
   cdk-diff:
     needs: infra-file-guard
     if: needs.infra-file-guard.outputs.has_infra_changes == 'true'
-    runs-on: ubuntu-latest
+    runs-on:
+      - codebuild-aws-devops-demo-${{ github.run_id }}-${{ github.run_attempt }}
     strategy:
       matrix:
         include:

@@ -12,7 +12,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: deploy-svc-dev-${{ github.ref }}
@@ -53,7 +52,8 @@ jobs:
   diff:
     needs: parse
     if: needs.parse.outputs.should_deploy == 'true'
-    runs-on: ubuntu-latest
+    runs-on:
+      - codebuild-aws-devops-demo-${{ github.run_id }}-${{ github.run_attempt }}
     strategy:
       matrix:
         service: ${{ fromJson(needs.parse.outputs.services_matrix) }}
@@ -105,7 +105,8 @@ jobs:
   # ── Docker Build & Push (并行) ───────────────────────────
   build:
     needs: [parse, diff]
-    runs-on: ubuntu-latest
+    runs-on:
+      - codebuild-aws-devops-demo-${{ github.run_id }}-${{ github.run_attempt }}
     strategy:
       matrix:
         service: ${{ fromJson(needs.parse.outputs.services_matrix) }}
@@ -136,7 +137,8 @@ jobs:
   # ── CDK Deploy ───────────────────────────────────────────
   deploy:
     needs: [parse, build]
-    runs-on: ubuntu-latest
+    runs-on:
+      - codebuild-aws-devops-demo-${{ github.run_id }}-${{ github.run_attempt }}
     environment: dev
     strategy:
       max-parallel: 1

@@ -6,7 +6,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: release-infra
@@ -14,7 +13,8 @@ concurrency:
 jobs:
   # ── Staging ──────────────────────────────────────────────
   staging-diff:
-    runs-on: ubuntu-latest
+    runs-on:
+      - codebuild-aws-devops-demo-${{ github.run_id }}-${{ github.run_attempt }}
     outputs:
       has_diff: ${{ steps.diff.outputs.has_diff }}
     steps:
@@ -65,7 +65,8 @@ jobs:
   staging-deploy:
     needs: staging-diff
     if: needs.staging-diff.outputs.has_diff == 'true'
-    runs-on: ubuntu-latest
+    runs-on:
+      - codebuild-aws-devops-demo-${{ github.run_id }}-${{ github.run_attempt }}
     environment: staging
     steps:
       - uses: actions/checkout@v6
@@ -106,7 +107,8 @@ jobs:
   prod-diff:
     needs: [staging-diff, staging-deploy]
     if: always() && (needs.staging-deploy.result == 'success' || needs.staging-diff.outputs.has_diff == 'false')
-    runs-on: ubuntu-latest
+    runs-on:
+      - codebuild-aws-devops-demo-${{ github.run_id }}-${{ github.run_attempt }}
     outputs:
       has_diff: ${{ steps.diff.outputs.has_diff }}
     steps:
@@ -157,7 +159,8 @@ jobs:
   prod-deploy:
     needs: prod-diff
     if: needs.prod-diff.outputs.has_diff == 'true'
-    runs-on: ubuntu-latest
+    runs-on:
+      - codebuild-aws-devops-demo-${{ github.run_id }}-${{ github.run_attempt }}
     environment: production
     steps:
       - uses: actions/checkout@v6
