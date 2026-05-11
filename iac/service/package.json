@@ -10,12 +10,12 @@
     "clean": "rm -rf cdk.out dist"
   },
   "dependencies": {
-    "aws-cdk-lib": "^2.170.0",
+    "aws-cdk-lib": "^2.253.1",
     "constructs": "^10.4.0",
     "source-map-support": "^0.5.21"
   },
   "devDependencies": {
-    "aws-cdk": "^2.170.0",
+    "aws-cdk": "^2.1030.0",
     "typescript": "~5.6.0",
     "ts-node": "^10.9.0",
     "@types/node": "^22.0.0",

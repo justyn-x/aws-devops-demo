@@ -10,10 +10,20 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// revision is the value of the SERVICE_REVISION env var captured at Init time.
+// CI sets this to the deploy image tag (e.g. "dev-abc1234-justyn-x"), which is unique per
+// build, so during a LINEAR deployment blue tasks have one value and green tasks another.
+// Exposed via Revision() so HTTP and gRPC response headers can advertise it for verification.
+var revision = "unknown"
+
 // Init initializes the global zap logger with JSON encoding for CloudWatch Logs.
 // Level is controlled by the LOG_LEVEL env var (default: "info").
+// Every log line is decorated with `revision` (from the SERVICE_REVISION env var).
 func Init() {
 	level := parseLevel(os.Getenv("LOG_LEVEL"))
+	if r := os.Getenv("SERVICE_REVISION"); r != "" {
+		revision = r
+	}
 
 	cfg := zap.Config{
 		Level:       zap.NewAtomicLevelAt(level),
@@ -38,7 +48,13 @@ func Init() {
 	if err != nil {
 		panic("failed to init logger: " + err.Error())
 	}
+	l = l.With(zap.String("revision", revision))
 	zap.ReplaceGlobals(l)
+}
+
+// Revision returns the SERVICE_REVISION captured at Init time, or "unknown".
+func Revision() string {
+	return revision
 }
 
 // FromContext returns a logger enriched with the trace_id from the OTEL span in ctx.

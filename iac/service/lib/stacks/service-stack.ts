@@ -30,6 +30,7 @@ export class ServiceStack extends cdk.Stack {
     super(scope, id, props);
 
     const { config, serviceConfig: svc } = props;
+    const isLinear = (config.linearServices ?? []).includes(svc.serviceName);
 
     // --- Resolve infra resources ---
     const vpcId = ssm.StringParameter.valueFromLookup(this, `${props.ssmBase}/vpc/id`);
@@ -65,6 +66,79 @@ export class ServiceStack extends cdk.Stack {
       removalPolicy: config.removalPolicy,
     });
 
+    // --- Internal ALB + Target Groups ---
+    // Built before TaskDefinition because LINEAR mode wires `alternateTarget` into TaskDefinition.
+    const alb = new elbv2.ApplicationLoadBalancer(this, 'InternalAlb', {
+      vpc,
+      internetFacing: false,
+      securityGroup: albSg,
+      vpcSubnets: { subnetGroupName: 'App' },
+    });
+
+    const tgHealthCheck = {
+      path: '/healthz',
+      interval: cdk.Duration.seconds(30),
+      timeout: cdk.Duration.seconds(5),
+      healthyThresholdCount: 2,
+      unhealthyThresholdCount: 3,
+    };
+
+    const primaryTg = new elbv2.ApplicationTargetGroup(this, 'PrimaryTg', {
+      vpc,
+      port: svc.httpPort,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      targetType: elbv2.TargetType.IP,
+      healthCheck: tgHealthCheck,
+      deregistrationDelay: cdk.Duration.seconds(30),
+    });
+
+    let alternateTg: elbv2.ApplicationTargetGroup | undefined;
+    let alternateTarget: ecs.AlternateTarget | undefined;
+
+    if (isLinear) {
+      alternateTg = new elbv2.ApplicationTargetGroup(this, 'AlternateTg', {
+        vpc,
+        port: svc.httpPort,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        targetType: elbv2.TargetType.IP,
+        healthCheck: tgHealthCheck,
+        deregistrationDelay: cdk.Duration.seconds(30),
+      });
+    }
+
+    // Listener: default action is fixedResponse 404 (no rule match → no route).
+    // Production traffic flows through an explicit listener rule (priority 1, path "/*").
+    // For LINEAR: rule is weighted forward [primary, alternate].
+    // For ROLLING: rule is single-target forward to primary.
+    const listener = alb.addListener('HttpListener', {
+      port: svc.httpPort,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      open: false,
+      defaultAction: elbv2.ListenerAction.fixedResponse(404, {
+        contentType: 'text/plain',
+        messageBody: 'no route',
+      }),
+    });
+
+    const productionRule = new elbv2.ApplicationListenerRule(this, 'ProductionRule', {
+      listener,
+      priority: 1,
+      conditions: [elbv2.ListenerCondition.pathPatterns(['/*'])],
+      action: isLinear && alternateTg
+        ? elbv2.ListenerAction.weightedForward([
+            { targetGroup: primaryTg, weight: 100 },
+            { targetGroup: alternateTg, weight: 0 },
+          ])
+        : elbv2.ListenerAction.forward([primaryTg]),
+    });
+
+    if (isLinear && alternateTg) {
+      alternateTarget = new ecs.AlternateTarget('AlternateTarget', {
+        alternateTargetGroup: alternateTg,
+        productionListener: ecs.ListenerRuleConfiguration.applicationListenerRule(productionRule),
+      });
+    }
+
     // --- Task Definition ---
     const taskDef = new ecs.FargateTaskDefinition(this, 'TaskDef', {
       family: `${props.prefix}-${svc.serviceName}`,
@@ -94,6 +168,7 @@ export class ServiceStack extends cdk.Stack {
       OTEL_SERVICE_NAME: svc.serviceName,
       DEPLOYMENT_ENV: config.envName,
       LOG_LEVEL: 'info',
+      SERVICE_REVISION: props.imageTag,
       ...svc.envVars,
     };
 
@@ -190,13 +265,11 @@ export class ServiceStack extends cdk.Stack {
       protocol: ecs.Protocol.TCP,
     });
 
-    // App container waits for ADOT sidecar to start
     container.addContainerDependencies({
       container: adotContainer,
       condition: ecs.ContainerDependencyCondition.START,
     });
 
-    // --- ADOT IAM Permissions ---
     taskDef.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
       actions: [
         'xray:PutTraceSegments',
@@ -227,16 +300,104 @@ export class ServiceStack extends cdk.Stack {
       },
     ];
 
+    // --- Alarms (must exist before FargateService so we can pass names to deploymentAlarms) ---
+    const svcFullName = `${props.prefix}-${svc.serviceName}`;
+    const albFullName = alb.loadBalancerFullName;
+
+    const albResponseTime = new cloudwatch.Metric({
+      namespace: 'AWS/ApplicationELB', metricName: 'TargetResponseTime',
+      dimensionsMap: { LoadBalancer: albFullName, TargetGroup: primaryTg.targetGroupFullName },
+      statistic: 'p99', period: cdk.Duration.minutes(1),
+    });
+    const alb5xx = new cloudwatch.Metric({
+      namespace: 'AWS/ApplicationELB', metricName: 'HTTPCode_Target_5XX_Count',
+      dimensionsMap: { LoadBalancer: albFullName, TargetGroup: primaryTg.targetGroupFullName },
+      statistic: 'Sum', period: cdk.Duration.minutes(5),
+    });
+    const alb4xx = new cloudwatch.Metric({
+      namespace: 'AWS/ApplicationELB', metricName: 'HTTPCode_Target_4XX_Count',
+      dimensionsMap: { LoadBalancer: albFullName, TargetGroup: primaryTg.targetGroupFullName },
+      statistic: 'Sum', period: cdk.Duration.minutes(1),
+    });
+    const healthyHosts = new cloudwatch.Metric({
+      namespace: 'AWS/ApplicationELB', metricName: 'HealthyHostCount',
+      dimensionsMap: { LoadBalancer: albFullName, TargetGroup: primaryTg.targetGroupFullName },
+      statistic: 'Average', period: cdk.Duration.minutes(1),
+    });
+    const unhealthyHosts = new cloudwatch.Metric({
+      namespace: 'AWS/ApplicationELB', metricName: 'UnHealthyHostCount',
+      dimensionsMap: { LoadBalancer: albFullName, TargetGroup: primaryTg.targetGroupFullName },
+      statistic: 'Average', period: cdk.Duration.minutes(1),
+    });
+
+    let rollbackAlarmNames: string[] = [];
+    let alarmAction: cw_actions.SnsAction | undefined;
+
+    if (config.enableAlarms) {
+      const alarmTopic = new sns.Topic(this, 'ServiceAlarmTopic', {
+        topicName: `${svcFullName}-alarms`,
+      });
+      alarmAction = new cw_actions.SnsAction(alarmTopic);
+
+      const unhealthyHostAlarm = new cloudwatch.Alarm(this, 'UnhealthyHostAlarm', {
+        metric: unhealthyHosts.with({ period: cdk.Duration.minutes(5) }),
+        threshold: 0, evaluationPeriods: 2,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        alarmDescription: `${svcFullName} has unhealthy ALB targets`,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      });
+      unhealthyHostAlarm.addAlarmAction(alarmAction);
+
+      const target5xxAlarm = new cloudwatch.Alarm(this, 'Target5xxAlarm', {
+        metric: alb5xx,
+        threshold: 5, evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        alarmDescription: `${svcFullName} ALB 5xx errors > 5 in 5min`,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      });
+      target5xxAlarm.addAlarmAction(alarmAction);
+
+      const latencyP99Alarm = new cloudwatch.Alarm(this, 'LatencyP99Alarm', {
+        metric: albResponseTime.with({ period: cdk.Duration.minutes(5) }),
+        threshold: 1, evaluationPeriods: 3,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        alarmDescription: `${svcFullName} ALB p99 latency > 1s for 15min`,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      });
+      latencyP99Alarm.addAlarmAction(alarmAction);
+
+      const noRunningTasksAlarm = new cloudwatch.Alarm(this, 'NoRunningTasksAlarm', {
+        metric: new cloudwatch.Metric({
+          namespace: 'ECS/ContainerInsights', metricName: 'RunningTaskCount',
+          dimensionsMap: { ClusterName: clusterName, ServiceName: svcFullName },
+          statistic: 'Average', period: cdk.Duration.minutes(1),
+        }),
+        threshold: 1, evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+        alarmDescription: `${svcFullName} has no running tasks`,
+        treatMissingData: cloudwatch.TreatMissingData.BREACHING,
+      });
+      noRunningTasksAlarm.addAlarmAction(alarmAction);
+
+      // Rollback alarms — fire if green tasks are unhealthy / erroring / slow.
+      // CPU/Memory alarms (created after FargateService) reflect steady-state load,
+      // not deployment health, so they're not in this list.
+      rollbackAlarmNames = [
+        unhealthyHostAlarm.alarmName,
+        target5xxAlarm.alarmName,
+        latencyP99Alarm.alarmName,
+      ];
+    }
+
     // --- Fargate Service ---
     this.ecsService = new ecs.FargateService(this, 'Service', {
-      serviceName: `${props.prefix}-${svc.serviceName}`,
+      serviceName: svcFullName,
       cluster: ecsCluster,
       taskDefinition: taskDef,
       desiredCount: config.ecsDesiredCount,
       securityGroups: [ecsSg],
       vpcSubnets: { subnetGroupName: 'App' },
       assignPublicIp: false,
-      circuitBreaker: { enable: true, rollback: true },
       minHealthyPercent: 100,
       maxHealthyPercent: 200,
       enableExecuteCommand: true,
@@ -244,37 +405,62 @@ export class ServiceStack extends cdk.Stack {
         namespace: namespaceArn,
         services: scServices,
       },
+      ...(isLinear
+        ? {
+            deploymentStrategy: ecs.DeploymentStrategy.LINEAR,
+            bakeTime: cdk.Duration.minutes(config.linearDeploymentBakeMinutes ?? 5),
+            linearConfiguration: {
+              stepPercent: config.linearStepPercent ?? 20,
+              stepBakeTime: cdk.Duration.minutes(config.linearStepBakeMinutes ?? 2),
+            },
+            ...(rollbackAlarmNames.length > 0
+              ? {
+                  deploymentAlarms: {
+                    alarmNames: rollbackAlarmNames,
+                    behavior: ecs.AlarmBehavior.ROLLBACK_ON_ALARM,
+                  },
+                }
+              : {}),
+          }
+        : {
+            // DeploymentCircuitBreaker is only valid for ROLLING.
+            circuitBreaker: { enable: true, rollback: true },
+          }),
     });
 
-    // --- Internal ALB ---
-    const alb = new elbv2.ApplicationLoadBalancer(this, 'InternalAlb', {
-      vpc,
-      internetFacing: false,
-      securityGroup: albSg,
-      vpcSubnets: { subnetGroupName: 'App' },
-    });
+    // Register the service as a target of the primary TG.
+    // For LINEAR, passing `alternateTarget` here causes CDK to populate
+    // LoadBalancers[].AdvancedConfiguration on the ECS service (alternate TG ARN,
+    // production listener rule ARN, IAM role ARN that ECS uses to flip ALB weights).
+    primaryTg.addTarget(this.ecsService.loadBalancerTarget({
+      containerName: svc.serviceName,
+      containerPort: svc.httpPort,
+      ...(alternateTarget ? { alternateTarget } : {}),
+    }));
 
-    const listener = alb.addListener('HttpListener', {
-      port: svc.httpPort,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      open: false,
-    });
+    // CPU/Memory metrics (used by dashboard + extra alarms) — service must exist first.
+    const cpuMetric = this.ecsService.metricCpuUtilization({ period: cdk.Duration.minutes(1) });
+    const memMetric = this.ecsService.metricMemoryUtilization({ period: cdk.Duration.minutes(1) });
 
-    const targetGroup = listener.addTargets('EcsTargets', {
-      port: svc.httpPort,
-      targets: [this.ecsService.loadBalancerTarget({
-        containerName: svc.serviceName,
-        containerPort: svc.httpPort,
-      })],
-      healthCheck: {
-        path: '/healthz',
-        interval: cdk.Duration.seconds(30),
-        timeout: cdk.Duration.seconds(5),
-        healthyThresholdCount: 2,
-        unhealthyThresholdCount: 3,
-      },
-      deregistrationDelay: cdk.Duration.seconds(30),
-    });
+    if (config.enableAlarms && alarmAction) {
+      const cpuAlarm = new cloudwatch.Alarm(this, 'CpuAlarm', {
+        metric: cpuMetric.with({ period: cdk.Duration.minutes(5), statistic: 'Average' }),
+        threshold: 80, evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        alarmDescription: `${svcFullName} ECS CPU > 80% for 5min`,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      });
+      cpuAlarm.addAlarmAction(alarmAction);
+
+      const memoryAlarm = new cloudwatch.Alarm(this, 'MemoryAlarm', {
+        metric: memMetric.with({ period: cdk.Duration.minutes(5), statistic: 'Average' }),
+        threshold: 80, evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        alarmDescription: `${svcFullName} ECS Memory > 80% for 5min`,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      });
+      memoryAlarm.addAlarmAction(alarmAction);
+    }
 
     // --- API Gateway Routes ---
     const integration = new apigatewayv2.CfnIntegration(this, 'ApiIntegration', {
@@ -308,40 +494,7 @@ export class ServiceStack extends cdk.Stack {
       scaleOutCooldown: cdk.Duration.seconds(60),
     });
 
-    // --- Monitoring: Dashboard + Alarms ---
-    const svcFullName = `${props.prefix}-${svc.serviceName}`;
-
-    const cpuMetric = this.ecsService.metricCpuUtilization({ period: cdk.Duration.minutes(1) });
-    const memMetric = this.ecsService.metricMemoryUtilization({ period: cdk.Duration.minutes(1) });
-
-    const albFullName = alb.loadBalancerFullName;
-
-    const albResponseTime = new cloudwatch.Metric({
-      namespace: 'AWS/ApplicationELB', metricName: 'TargetResponseTime',
-      dimensionsMap: { LoadBalancer: albFullName, TargetGroup: targetGroup.targetGroupFullName },
-      statistic: 'p99', period: cdk.Duration.minutes(1),
-    });
-    const alb5xx = new cloudwatch.Metric({
-      namespace: 'AWS/ApplicationELB', metricName: 'HTTPCode_Target_5XX_Count',
-      dimensionsMap: { LoadBalancer: albFullName, TargetGroup: targetGroup.targetGroupFullName },
-      statistic: 'Sum', period: cdk.Duration.minutes(5),
-    });
-    const alb4xx = new cloudwatch.Metric({
-      namespace: 'AWS/ApplicationELB', metricName: 'HTTPCode_Target_4XX_Count',
-      dimensionsMap: { LoadBalancer: albFullName, TargetGroup: targetGroup.targetGroupFullName },
-      statistic: 'Sum', period: cdk.Duration.minutes(1),
-    });
-    const healthyHosts = new cloudwatch.Metric({
-      namespace: 'AWS/ApplicationELB', metricName: 'HealthyHostCount',
-      dimensionsMap: { LoadBalancer: albFullName, TargetGroup: targetGroup.targetGroupFullName },
-      statistic: 'Average', period: cdk.Duration.minutes(1),
-    });
-    const unhealthyHosts = new cloudwatch.Metric({
-      namespace: 'AWS/ApplicationELB', metricName: 'UnHealthyHostCount',
-      dimensionsMap: { LoadBalancer: albFullName, TargetGroup: targetGroup.targetGroupFullName },
-      statistic: 'Average', period: cdk.Duration.minutes(1),
-    });
-
+    // --- Dashboard ---
     new cloudwatch.Dashboard(this, 'ServiceDashboard', {
       dashboardName: svcFullName,
       widgets: [
@@ -379,64 +532,5 @@ export class ServiceStack extends cdk.Stack {
         ],
       ],
     });
-
-    if (config.enableAlarms) {
-      const alarmTopic = new sns.Topic(this, 'ServiceAlarmTopic', {
-        topicName: `${svcFullName}-alarms`,
-      });
-      const alarmAction = new cw_actions.SnsAction(alarmTopic);
-
-      new cloudwatch.Alarm(this, 'CpuAlarm', {
-        metric: cpuMetric.with({ period: cdk.Duration.minutes(5), statistic: 'Average' }),
-        threshold: 80, evaluationPeriods: 1,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-        alarmDescription: `${svcFullName} ECS CPU > 80% for 5min`,
-        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-      }).addAlarmAction(alarmAction);
-
-      new cloudwatch.Alarm(this, 'MemoryAlarm', {
-        metric: memMetric.with({ period: cdk.Duration.minutes(5), statistic: 'Average' }),
-        threshold: 80, evaluationPeriods: 1,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-        alarmDescription: `${svcFullName} ECS Memory > 80% for 5min`,
-        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-      }).addAlarmAction(alarmAction);
-
-      new cloudwatch.Alarm(this, 'UnhealthyHostAlarm', {
-        metric: unhealthyHosts.with({ period: cdk.Duration.minutes(5) }),
-        threshold: 0, evaluationPeriods: 2,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-        alarmDescription: `${svcFullName} has unhealthy ALB targets`,
-        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-      }).addAlarmAction(alarmAction);
-
-      new cloudwatch.Alarm(this, 'Target5xxAlarm', {
-        metric: alb5xx,
-        threshold: 5, evaluationPeriods: 1,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-        alarmDescription: `${svcFullName} ALB 5xx errors > 5 in 5min`,
-        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-      }).addAlarmAction(alarmAction);
-
-      new cloudwatch.Alarm(this, 'LatencyP99Alarm', {
-        metric: albResponseTime.with({ period: cdk.Duration.minutes(5) }),
-        threshold: 1, evaluationPeriods: 3,
-        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
-        alarmDescription: `${svcFullName} ALB p99 latency > 1s for 15min`,
-        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-      }).addAlarmAction(alarmAction);
-
-      new cloudwatch.Alarm(this, 'NoRunningTasksAlarm', {
-        metric: new cloudwatch.Metric({
-          namespace: 'ECS/ContainerInsights', metricName: 'RunningTaskCount',
-          dimensionsMap: { ClusterName: clusterName, ServiceName: svcFullName },
-          statistic: 'Average', period: cdk.Duration.minutes(1),
-        }),
-        threshold: 1, evaluationPeriods: 1,
-        comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
-        alarmDescription: `${svcFullName} has no running tasks`,
-        treatMissingData: cloudwatch.TreatMissingData.BREACHING,
-      }).addAlarmAction(alarmAction);
-    }
   }
 }

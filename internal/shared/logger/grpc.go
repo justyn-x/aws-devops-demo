@@ -7,12 +7,19 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-// UnaryServerInterceptor returns a gRPC server interceptor that logs every unary RPC.
+// UnaryServerInterceptor returns a gRPC server interceptor that logs every unary RPC
+// and stamps each response with the x-service-revision header so callers can tell
+// which task (blue/green) handled the request during a LINEAR deployment.
 func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		// Stamp revision header before invoking the handler so it lands on the response
+		// regardless of whether the handler errors out.
+		_ = grpc.SetHeader(ctx, metadata.Pairs("x-service-revision", revision))
+
 		start := time.Now()
 		resp, err := handler(ctx, req)
 		duration := time.Since(start)

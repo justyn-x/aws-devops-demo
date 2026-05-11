@@ -1,0 +1,14 @@
+# CloudWatch Logs Insights query — count requests by revision in 10-second buckets.
+# Run against log group: /ecs/awsdemo-dev-todo-service
+# Time range: pick a window that brackets the deploy (e.g. last 30min)
+
+fields @timestamp, revision
+| filter ispresent(revision)
+| stats count(*) as reqs by bin(10s) as window, revision
+| sort window asc
+
+# Variant — split by HTTP vs gRPC server side:
+# fields @timestamp, revision, msg
+# | filter msg = "http.request" or msg = "grpc.server.unary"
+# | stats count(*) as reqs by bin(10s) as window, msg, revision
+# | sort window asc

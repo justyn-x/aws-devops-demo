@@ -1,1 +1,65 @@
-{}
+{
+  "ssm:account=482155437574:parameterName=/projects/awsdemo-dev/infra/vpc/id:region=us-east-1": "vpc-027d7a1952dcad61d",
+  "vpc-provider:account=482155437574:filter.vpc-id=vpc-027d7a1952dcad61d:region=us-east-1:returnAsymmetricSubnets=true": {
+    "vpcId": "vpc-027d7a1952dcad61d",
+    "vpcCidrBlock": "10.0.0.0/16",
+    "ownerAccountId": "482155437574",
+    "availabilityZones": [],
+    "subnetGroups": [
+      {
+        "name": "Data",
+        "type": "Isolated",
+        "subnets": [
+          {
+            "subnetId": "subnet-08373e1c43f5554bf",
+            "cidr": "10.0.4.0/24",
+            "availabilityZone": "us-east-1a",
+            "routeTableId": "rtb-0de8523a08d0cbf57"
+          },
+          {
+            "subnetId": "subnet-0d041d2841f29c3b4",
+            "cidr": "10.0.5.0/24",
+            "availabilityZone": "us-east-1b",
+            "routeTableId": "rtb-06471bd1765d56c46"
+          }
+        ]
+      },
+      {
+        "name": "App",
+        "type": "Private",
+        "subnets": [
+          {
+            "subnetId": "subnet-07a34fb59eae36f65",
+            "cidr": "10.0.2.0/24",
+            "availabilityZone": "us-east-1a",
+            "routeTableId": "rtb-0acd2bd6e7f3b4900"
+          },
+          {
+            "subnetId": "subnet-0024dcc9a2311525c",
+            "cidr": "10.0.3.0/24",
+            "availabilityZone": "us-east-1b",
+            "routeTableId": "rtb-0e07021124e457e70"
+          }
+        ]
+      },
+      {
+        "name": "Public",
+        "type": "Public",
+        "subnets": [
+          {
+            "subnetId": "subnet-097f800ffa5f843b1",
+            "cidr": "10.0.0.0/24",
+            "availabilityZone": "us-east-1a",
+            "routeTableId": "rtb-0b0b2043d2b8869f1"
+          },
+          {
+            "subnetId": "subnet-0735b941f3aa60a5c",
+            "cidr": "10.0.1.0/24",
+            "availabilityZone": "us-east-1b",
+            "routeTableId": "rtb-072deea40550c820e"
+          }
+        ]
+      }
+    ]
+  }
+}
